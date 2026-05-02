@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   StyleSheet,
@@ -46,6 +46,9 @@ export function Board({
   onColumnPress,
   onCellPress,
 }: BoardProps) {
+  const [highlightColumn, setHighlightColumn] = useState(null);
+  const clearTimer = useRef(null);
+
   function getPieceImage(cell: number) {
     if (cell === CELL.RED) return redPiece;
     if (cell === CELL.YELLOW) return yellowPiece;
@@ -72,20 +75,42 @@ export function Board({
     return false;
   }
 
+  function showHighlight(column: number) {
+    if (disabled) return;
+    if (activeItem === ITEM.DELETE || activeItem === ITEM.PUSH_RIGHT) return;
+
+    if (clearTimer.current) {
+      clearTimeout(clearTimer.current);
+    }
+
+    setHighlightColumn(column);
+  }
+
+  function hideHighlight(delay = 120) {
+    if (clearTimer.current) {
+      clearTimeout(clearTimer.current);
+    }
+
+    clearTimer.current = setTimeout(() => {
+      setHighlightColumn(null);
+    }, delay);
+  }
+
   function handleCellPress(row: number, column: number) {
     if (disabled) return;
 
-    if (activeItem === ITEM.DELETE || activeItem === ITEM.PUSH_RIGHT) {
-      onCellPress(row, column);
-      return;
-    }
+    showHighlight(column);
 
-    if (activeItem === ITEM.PUSH_DOWN) {
+    setTimeout(() => {
+      if (activeItem === ITEM.DELETE || activeItem === ITEM.PUSH_RIGHT) {
+        onCellPress(row, column);
+        hideHighlight(120);
+        return;
+      }
+
       onColumnPress(column);
-      return;
-    }
-
-    onColumnPress(column);
+      hideHighlight(120);
+    }, 80);
   }
 
   return (
@@ -101,18 +126,29 @@ export function Board({
         <View key={`row-${rowIndex}`} style={styles.row}>
           {row.map((cell, columnIndex) => {
             const selectable = isSelectableCell(rowIndex, columnIndex);
+            const highlighted = highlightColumn === columnIndex;
 
             return (
-              <Cell
-                key={`cell-${rowIndex}-${columnIndex}`}
-                size={cellSize}
-                margin={cellMargin}
-                imageSource={getPieceImage(cell)}
-                isWinning={isWinningCell(rowIndex, columnIndex)}
-                isSelectable={selectable}
-                disabled={disabled}
-                onPress={() => handleCellPress(rowIndex, columnIndex)}
-              />
+              <View
+                key={`wrap-${rowIndex}-${columnIndex}`}
+                style={[
+                  highlighted && styles.columnBackground,
+                ]}
+              >
+                <Cell
+                  key={`cell-${rowIndex}-${columnIndex}`}
+                  size={cellSize}
+                  margin={cellMargin}
+                  imageSource={getPieceImage(cell)}
+                  isWinning={isWinningCell(rowIndex, columnIndex)}
+                  isSelectable={selectable}
+                  isColumnHighlighted={highlighted}
+                  disabled={disabled}
+                  onPress={() => handleCellPress(rowIndex, columnIndex)}
+                  onPressIn={() => showHighlight(columnIndex)}
+                  onPressOut={() => hideHighlight(120)}
+                />
+              </View>
             );
           })}
         </View>
@@ -129,5 +165,9 @@ const styles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
+  },
+  columnBackground: {
+    backgroundColor: 'rgba(255,235,59,0.12)',
+    borderRadius: 8,
   },
 });

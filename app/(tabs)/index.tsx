@@ -42,6 +42,7 @@ export default function TitleScreen() {
         <Text style={styles.title}>四目並べ</Text>
         <Text style={styles.subtitle}>Connect Four</Text>
 
+        {/* ステージモード */}
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
           <TouchableOpacity
             style={styles.startButton}
@@ -51,16 +52,23 @@ export default function TitleScreen() {
           </TouchableOpacity>
         </Animated.View>
 
+        {/* CPU対戦 */}
         <TouchableOpacity
           style={styles.subButton}
-          onPress={() => {
-            // 今は未実装
-            alert('対戦モードは今後実装予定');
-          }}
+          onPress={() => router.push('/game?mode=pvc')}
         >
-          <Text style={styles.subText}>対戦</Text>
+          <Text style={styles.subText}>CPU対戦</Text>
         </TouchableOpacity>
 
+        {/* 2人対戦 */}
+        <TouchableOpacity
+          style={styles.subButton}
+          onPress={() => router.push('/game?mode=pvp')}
+        >
+          <Text style={styles.subText}>2人対戦</Text>
+        </TouchableOpacity>
+
+        {/* 設定 */}
         <TouchableOpacity
           style={styles.settingButton}
           onPress={() => router.push('/settings')}
@@ -116,7 +124,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 60,
     borderRadius: 12,
-    marginBottom: 20,
+    marginBottom: 14,
   },
 
   subText: {

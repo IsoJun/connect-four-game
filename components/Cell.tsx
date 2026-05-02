@@ -14,8 +14,11 @@ export function Cell({
   imageSource,
   isWinning = false,
   isSelectable = false,
+  isColumnHighlighted = false,
   disabled = false,
   onPress,
+  onPressIn,
+  onPressOut,
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -41,7 +44,6 @@ export function Cell({
     );
 
     animation.start();
-
     return () => animation.stop();
   }, [isWinning]);
 
@@ -50,6 +52,8 @@ export function Cell({
       activeOpacity={0.75}
       disabled={disabled}
       onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
     >
       <Animated.View
         style={[
@@ -60,6 +64,7 @@ export function Cell({
             margin,
             transform: [{ scale }],
           },
+          isColumnHighlighted && styles.columnHighlight,
           isWinning && styles.winning,
           isSelectable && styles.selectable,
         ]}
@@ -67,7 +72,12 @@ export function Cell({
         {imageSource ? (
           <Image source={imageSource} style={styles.image} />
         ) : (
-          <View style={styles.empty} />
+          <View
+            style={[
+              styles.empty,
+              isColumnHighlighted && styles.emptyHighlighted,
+            ]}
+          />
         )}
       </Animated.View>
     </TouchableOpacity>
@@ -91,6 +101,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.92)',
   },
+  emptyHighlighted: {
+    backgroundColor: 'rgba(255,235,59,0.55)',
+  },
+  columnHighlight: {
+    borderWidth: 2,
+    borderColor: '#ffeb3b',
+    backgroundColor: 'rgba(255,235,59,0.18)',
+    shadowColor: '#ffeb3b',
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+    elevation: 8,
+  },
   winning: {
     borderWidth: 3,
     borderColor: '#ffffff',
@@ -98,7 +120,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 1,
     shadowRadius: 10,
     elevation: 10,
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
   },
   selectable: {
     borderWidth: 3,

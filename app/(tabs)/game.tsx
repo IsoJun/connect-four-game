@@ -21,6 +21,8 @@ import { Board } from '../../components/Board';
 import { ItemBar } from '../../components/ItemBar';
 import { SkinSelector } from '../../components/SkinSelector';
 import { StageHeader } from '../../components/StageHeader';
+import { PlayerItemBar } from '../../components/PlayerItemBar';
+import { CELL } from '../../hooks/useGame';
 
 export default function GameScreen() {
   const router = useRouter();
@@ -29,24 +31,28 @@ export default function GameScreen() {
 
   const params = useLocalSearchParams();
   const initialStage = Number(params.stage || 1);
+  const mode = params.mode || 'stage';
+
 
   const {
+    gameMode,
+
     board,
     player,
     result,
+    winner, 
     winningCells,
-
+    isCpuThinking,
+    
     stage,
     maxStage,
     maxUnlockedStage,
     stageLevel,
 
+    items,
     activeItem,
     setActiveItem,
-    deleteLeft,
-    pushDownLeft,
-    pushRightLeft,
-
+   
     showItemSelect,
     chooseStageItem,
 
@@ -62,7 +68,7 @@ export default function GameScreen() {
     goPrevStage,
 
     reloadSettings,
-  } = useGame(initialStage);
+  } = useGame(initialStage, mode);
 
   // =========================
   // 🔊 音処理
@@ -164,9 +170,34 @@ export default function GameScreen() {
     )
   );
 
-  const disabled =
-    result !== 'playing' || player !== 1;
+  const isRedTurn = player === CELL.RED;
+  const isYellowTurn = player === CELL.YELLOW;
 
+ const isRedItemDisabled =
+    result !== 'playing' || player !== CELL.RED;
+
+  const isYellowItemDisabled =
+    result !== 'playing' ||
+    player !== CELL.YELLOW ||
+    gameMode !== 'pvp';
+  
+    function handleMainAction() {
+    if (gameMode === 'stage') {
+      if (result === 'win') {
+        if (stage < maxStage) {
+          goNextStage();
+        } else {
+          resetStage();
+        }
+        return;
+      }
+
+      resetStage();
+      return;
+    }
+
+    resetStage();
+  }
   // =========================
   // 🎮 UI
   // =========================
@@ -185,13 +216,37 @@ export default function GameScreen() {
             { width: isLandscape ? '65%' : '100%' },
           ]}
         >
+          <View style={styles.infoPanel}>
+          <Text style={styles.modeText}>
+            {gameMode === 'stage' && 'ステージモード'}
+            {gameMode === 'pvc' && 'CPU対戦'}
+            {gameMode === 'pvp' && '2人対戦'}
+          </Text>
+
+          {result === 'playing' && (
+            <Text style={styles.turnText}>
+              {isCpuThinking
+                ? 'CPU思考中...'
+                : player === 1
+                  ? '赤の番'
+                  : gameMode === 'pvc'
+                    ? 'CPUの番'
+                    : '黄の番'}
+            </Text>
+          )}
+
+          {result !== 'playing' && (
+            <Text style={styles.resultText}>
+              {getResultText(result, winner, gameMode)}
+            </Text>
+          )}
+        </View>
           <Board
             board={board}
             cellSize={cellSize}
             cellMargin={cellMargin}
             boardPadding={boardPadding}
             activeItem={activeItem}
-            disabled={disabled}
             winningCells={winningCells}
             redPiece={selectedSkin.red}
             yellowPiece={selectedSkin.yellow}
@@ -211,23 +266,43 @@ export default function GameScreen() {
           contentContainerStyle={styles.uiArea}
         >
           <StageHeader
+            gameMode={gameMode}
+
             stage={stage}
             maxStage={maxStage}
             maxUnlockedStage={maxUnlockedStage}
             stageLevel={stageLevel}
+
             result={result}
+
             onBack={() => router.back()}
             onRetry={resetStage}
             onPrevStage={goPrevStage}
             onNextStage={goNextStage}
+
+            onStageSelect={() => router.push('/stages')}
+            onTitle={() => router.replace('/')}
           />
 
-          <ItemBar
+          {/* 赤 */}
+          <PlayerItemBar
+            label="赤のアイテム"
             activeItem={activeItem}
-            deleteLeft={deleteLeft}
-            pushDownLeft={pushDownLeft}
-            pushRightLeft={pushRightLeft}
-            disabled={disabled}
+            deleteLeft={items.red.delete}
+            pushDownLeft={items.red.pushDown}
+            pushRightLeft={items.red.pushRight}
+            disabled={isRedItemDisabled}
+            onSelectItem={setActiveItem}
+            onCancelItem={() => setActiveItem(null)}
+          />
+
+          <PlayerItemBar
+            label="黄のアイテム"
+            activeItem={activeItem}
+            deleteLeft={items.yellow.delete}
+            pushDownLeft={items.yellow.pushDown}
+            pushRightLeft={items.yellow.pushRight}
+            disabled={isYellowItemDisabled}
             onSelectItem={setActiveItem}
             onCancelItem={() => setActiveItem(null)}
           />
@@ -241,41 +316,88 @@ export default function GameScreen() {
       </View>
 
       {/* 🎉 勝利ポップ */}
-      {result === 'win' && (
+      {result !== 'playing' && (
         <View style={styles.clearOverlay}>
-          <View style={styles.clearModal}>
-            <Text style={styles.clearTitle}>ステージクリア！</Text>
+        <View style={styles.clearModal}>
 
-            {stage < maxStage ? (
-              <TouchableOpacity
-                style={styles.mainButton}
-                onPress={goNextStage}
-              >
-                <Text style={styles.mainButtonText}>
-                  次のステージへ
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.clearText}>
-                全ステージクリア！
-              </Text>
-            )}
+          <Text style={styles.clearTitle}>
+            {getTitle(gameMode, result, winner)}
+          </Text>
 
-            <TouchableOpacity
-              style={styles.subButton}
-              onPress={() => router.back()}
-            >
-              <Text style={styles.subButtonText}>
-                ステージ選択へ
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* メインボタン */}
+          <TouchableOpacity
+            style={styles.mainButton}
+            onPress={handleMainAction}
+          >
+            <Text style={styles.mainButtonText}>
+              {getMainLabel(gameMode, result, stage, maxStage)}
+            </Text>
+          </TouchableOpacity>
+
+          {/* サブボタン */}
+          <TouchableOpacity
+            style={styles.subButton}
+            onPress={() => router.replace('/')}
+          >
+            <Text style={styles.subButtonText}>
+              タイトルに戻る
+            </Text>
+          </TouchableOpacity>
+
         </View>
+      </View>
       )}
     </SafeAreaView>
   );
 }
 
+function getTitle(mode, result, winner) {
+  if (mode === 'stage') {
+    if (result === 'win') return 'ステージクリア！';
+    if (result === 'lose') return '残念...';
+    if (result === 'draw') return '引き分け';
+  }
+
+  if (mode === 'pvc' || mode === 'pvp') {
+    return 'もう一度戦う？';
+  }
+
+  return '';
+}
+
+function getMainLabel(mode, result, stage, maxStage) {
+  if (mode === 'stage') {
+    if (result === 'win') {
+      return stage < maxStage
+        ? '次のステージへ'
+        : '全ステージクリア！';
+    }
+    return 'リトライ';
+  }
+
+  return 'リトライ';
+}
+
+function getResultText(result: string, winner: number | null, gameMode: string) {
+  if (result === 'draw') return '引き分け！';
+
+  if (gameMode === 'pvp') {
+    if (winner === 1) return '赤の勝ち！';
+    if (winner === 2) return '黄の勝ち！';
+  }
+
+  if (gameMode === 'pvc') {
+    if (winner === 1) return 'あなたの勝ち！';
+    if (winner === 2) return 'CPUの勝ち';
+  }
+
+  if (gameMode === 'stage') {
+    if (result === 'win') return 'ステージクリア！';
+    if (result === 'lose') return '失敗...';
+  }
+
+  return '';
+}
 // =========================
 // 🎨 Style
 // =========================
@@ -346,5 +468,25 @@ const styles = StyleSheet.create({
   subButtonText: {
     color: '#fff',
     fontWeight: '800',
+  },
+  infoPanel: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modeText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#455a64',
+    marginBottom: 4,
+  },
+  turnText: {
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#1565c0',
+  },
+  resultText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#ff7043',
   },
 });
