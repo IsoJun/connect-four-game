@@ -52,10 +52,6 @@ export function StageHeader({
   const canGoPrev = stage > 1;
   const canGoNext = stage < maxUnlockedStage;
 
-  const displayStatus =
-    statusText ??
-    getDefaultStatusText(result, stage, gameMode);
-
   return (
     <View style={styles.container}>
 
@@ -100,11 +96,6 @@ export function StageHeader({
           CPU: {stageLevel}
         </Text>
       )}
-
-      {/* ステータス */}
-      <Text style={styles.status}>
-        {displayStatus}
-      </Text>
 
       {/* ステージ操作（stageのみ） */}
       {gameMode === GAME_MODE.STAGE && (

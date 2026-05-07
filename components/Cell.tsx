@@ -70,7 +70,11 @@ export function Cell({
         ]}
       >
         {imageSource ? (
-          <Image source={imageSource} style={styles.image} />
+          <Image
+            key={String(imageSource)}
+            source={imageSource}
+            style={styles.image}
+          />
         ) : (
           <View
             style={[
@@ -89,6 +93,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#1565c0',
   },
   image: {
     width: '100%',

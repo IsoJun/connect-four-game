@@ -41,7 +41,7 @@ export function ItemBar({
         />
 
         <ItemButton
-          label="押す"
+          label="潰す"
           count={pushDownLeft}
           active={activeItem === ITEM.PUSH_DOWN}
           disabled={disabled || pushDownLeft <= 0}

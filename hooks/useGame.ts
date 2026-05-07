@@ -13,7 +13,7 @@ import {
   findAnyWin,
 } from '../logic/gameLogic';
 
-import { getCpuMove } from '../logic/cpu';
+import { getCpuAction } from '../logic/cpu';
 
 import {
   deletePiece,
@@ -31,6 +31,26 @@ import {
 } from '../logic/stages';
 
 import { getSkinById, getUnlockedSkins } from '../logic/skins';
+
+type ItemSoundType = 'delete' | 'crash' | 'push';
+
+type ItemSoundEvent = {
+  type: ItemSoundType;
+  id: number;
+};
+
+type ItemEffectType = 'delete' | 'crash' | 'push';
+
+type BoardEffectCell = {
+  row: number;
+  col: number;
+};
+
+type BoardEffectEvent = {
+  id: number;
+  type: ItemEffectType;
+  cells: BoardEffectCell[];
+};
 
 export { CELL };
 
@@ -52,6 +72,12 @@ export const STORAGE_KEYS = {
   SKIN: 'skin',
   BOARD_SIZE: 'boardSize',
   CPU_LEVEL: 'cpuLevel',
+  PVP_ITEMS: 'pvpItems',
+};
+
+const defaultBattleItems = {
+  red: { delete: 0, pushDown: 0, pushRight: 0 },
+  yellow: { delete: 0, pushDown: 0, pushRight: 0 },
 };
 
 function stageToCpuLevel(stage: number): number {
@@ -78,14 +104,13 @@ function normalizeMode(mode: string) {
   return GAME_MODE.STAGE;
 }
 
-export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
+export function useGame(initialStage, mode, routeKey) {
   const gameMode = normalizeMode(mode);
 
   const [boardSize, setBoardSize] = useState('6x7');
   const boardSizeRef = useRef('6x7');
 
   const [board, setBoard] = useState(createSizedBoard('6x7'));
-
   const [player, setPlayer] = useState(CELL.RED);
   const [result, setResult] = useState(RESULT.PLAYING);
   const [winningCells, setWinningCells] = useState([]);
@@ -97,22 +122,77 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
   const [loaded, setLoaded] = useState(false);
 
   const [activeItem, setActiveItem] = useState(null);
-  const [items, setItems] = useState({
-    red: { delete: 0, pushDown: 0, pushRight: 0 },
-    yellow: { delete: 0, pushDown: 0, pushRight: 0 },
-  });
+  const [items, setItems] = useState(defaultBattleItems);
+  const [pvpItems, setPvpItems] = useState(defaultBattleItems);
+
   const [showItemSelect, setShowItemSelect] = useState(false);
+  const [itemSelectRule, setItemSelectRule] = useState({
+    count: 1,
+    allowDuplicate: false,
+  });
 
   const [selectedSkinId, setSelectedSkinId] = useState('normal');
   const [selectedCpuLevel, setSelectedCpuLevel] = useState(5);
   const [isCpuThinking, setIsCpuThinking] = useState(false);
 
+  const [itemSoundEvent, setItemSoundEvent] =
+    useState<ItemSoundEvent | null>(null);
+  const itemSoundEventId = useRef(0);
+
+  const [boardEffectEvent, setBoardEffectEvent] =
+    useState<BoardEffectEvent | null>(null);
+  const boardEffectEventId = useRef(0);
+
   const config = getStageConfig(stage);
-  const key = player === CELL.RED ? 'red' : 'yellow';
+
+  function createSizedBoard(size: string) {
+    const parsed = parseBoardSize(size);
+    return createBoard(parsed.rows, parsed.columns);
+  }
+
+  function notifyItemSound(type: ItemSoundType) {
+    itemSoundEventId.current += 1;
+
+    setItemSoundEvent({
+      type,
+      id: itemSoundEventId.current,
+    });
+  }
+
+  function notifyBoardEffect(type: ItemEffectType, cells: BoardEffectCell[]) {
+    boardEffectEventId.current += 1;
+
+    setBoardEffectEvent({
+      id: boardEffectEventId.current,
+      type,
+      cells,
+    });
+  }
+
+  function normalizeItems(items) {
+    return {
+      delete: items?.delete ?? 0,
+      pushDown: items?.pushDown ?? 0,
+      pushRight: items?.pushRight ?? 0,
+    };
+  }
 
   useEffect(() => {
     loadProgress();
   }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+
+    const requestedStage = clampStage(Number(initialStage || 1));
+
+    const playableStage =
+      gameMode === GAME_MODE.STAGE
+        ? Math.min(requestedStage, maxUnlockedStage)
+        : 1;
+
+    startStage(playableStage, maxUnlockedStage, boardSizeRef.current);
+  }, [initialStage, loaded, gameMode]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -121,44 +201,39 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     const requestedStage = clampStage(Number(initialStage || 1));
     const playableStage = Math.min(requestedStage, maxUnlockedStage);
 
-    if (playableStage !== stage) {
-      startStage(playableStage, maxUnlockedStage, boardSizeRef.current);
-    }
-  }, [initialStage, loaded]);
-
-  function createSizedBoard(size: string) {
-    const parsed = parseBoardSize(size);
-    return createBoard(parsed.rows, parsed.columns);
-  }
+    startStage(playableStage, maxUnlockedStage, boardSizeRef.current);
+  }, [routeKey, loaded]);
 
   async function loadProgress() {
     const savedStage = await AsyncStorage.getItem(
       STORAGE_KEYS.MAX_UNLOCKED_STAGE
     );
     const savedSkin = await AsyncStorage.getItem(STORAGE_KEYS.SKIN);
+    const savedPvpItems = await AsyncStorage.getItem(STORAGE_KEYS.PVP_ITEMS);
     const savedBoardSize = await AsyncStorage.getItem(STORAGE_KEYS.BOARD_SIZE);
     const savedCpuLevel = await AsyncStorage.getItem(STORAGE_KEYS.CPU_LEVEL);
 
     const unlocked = savedStage ? clampStage(Number(savedStage)) : 1;
-    const requestedStage = clampStage(Number(initialStage || 1));
-    const playableStage =
-      gameMode === GAME_MODE.STAGE
-        ? Math.min(requestedStage, unlocked)
-        : 1;
-
     const nextBoardSize = savedBoardSize || '6x7';
     const nextCpuLevel = savedCpuLevel
       ? clampCpuLevel(Number(savedCpuLevel))
       : 5;
 
+    const nextPvpItems = savedPvpItems
+      ? JSON.parse(savedPvpItems)
+      : defaultBattleItems;
+
     setMaxUnlockedStage(unlocked);
+    setPvpItems({
+      red: normalizeItems(nextPvpItems.red),
+      yellow: normalizeItems(nextPvpItems.yellow),
+    });
     setBoardSize(nextBoardSize);
     boardSizeRef.current = nextBoardSize;
 
     setSelectedSkinId(savedSkin || 'normal');
     setSelectedCpuLevel(nextCpuLevel);
 
-    startStage(playableStage, unlocked, nextBoardSize);
     setLoaded(true);
   }
 
@@ -167,6 +242,7 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
       STORAGE_KEYS.MAX_UNLOCKED_STAGE
     );
     const savedSkin = await AsyncStorage.getItem(STORAGE_KEYS.SKIN);
+    const savedPvpItems = await AsyncStorage.getItem(STORAGE_KEYS.PVP_ITEMS);
     const savedBoardSize = await AsyncStorage.getItem(STORAGE_KEYS.BOARD_SIZE);
     const savedCpuLevel = await AsyncStorage.getItem(STORAGE_KEYS.CPU_LEVEL);
 
@@ -180,22 +256,34 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
       ? clampCpuLevel(Number(savedCpuLevel))
       : 5;
 
+    const nextPvpItems = savedPvpItems
+      ? JSON.parse(savedPvpItems)
+      : defaultBattleItems;
+
     const boardSizeChanged = nextBoardSize !== boardSizeRef.current;
-    const skinChanged = nextSkinId !== selectedSkinId;
     const cpuLevelChanged = nextCpuLevel !== selectedCpuLevel;
+
     const currentStageLocked =
       gameMode === GAME_MODE.STAGE && stage > nextUnlockedStage;
 
     setSelectedSkinId(nextSkinId);
     setSelectedCpuLevel(nextCpuLevel);
     setMaxUnlockedStage(nextUnlockedStage);
+    setPvpItems({
+      red: normalizeItems(nextPvpItems.red),
+      yellow: normalizeItems(nextPvpItems.yellow),
+    });
 
     if (boardSizeChanged) {
       setBoardSize(nextBoardSize);
       boardSizeRef.current = nextBoardSize;
     }
 
-    if (boardSizeChanged || skinChanged || cpuLevelChanged || currentStageLocked) {
+    if (
+      boardSizeChanged ||
+      cpuLevelChanged ||
+      currentStageLocked
+    ) {
       const nextStage =
         gameMode === GAME_MODE.STAGE
           ? currentStageLocked
@@ -220,85 +308,171 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
 
   function setupItems(targetStage: number) {
     setActiveItem(null);
-
-    // 対戦モードではステージ設定を使わない
-    if (gameMode !== GAME_MODE.STAGE) {
-        setShowItemSelect(false);
-
-        setItems({
-        red: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        yellow: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        });
-
-        return;
-    }
-
-    const stageConfig = getStageConfig(targetStage);
-
-    if (!stageConfig) {
-        setShowItemSelect(false);
-
-        setItems({
-        red: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        yellow: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        });
-
-        return;
-    }
-
-    if (stageConfig.itemRule === 'select_one') {
-        setShowItemSelect(true);
-
-        setItems({
-        red: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        yellow: {
-            delete: 0,
-            pushDown: 0,
-            pushRight: 0,
-        },
-        });
-
-        return;
-    }
-
     setShowItemSelect(false);
 
+    const emptyItems = { delete: 0, pushDown: 0, pushRight: 0 };
+
+    if (gameMode === GAME_MODE.PVP || gameMode === GAME_MODE.PVC) {
+      setItems({
+        red: normalizeItems(pvpItems.red),
+        yellow: normalizeItems(pvpItems.yellow),
+      });
+
+      return;
+    }
+
+    const cpuItems = getCpuItemsByStage(targetStage);
+    const playerRule = getPlayerItemsByStage(targetStage);
+
+    if (playerRule.type === 'fixed') {
+      setItems({
+        red: normalizeItems(playerRule.items),
+        yellow: normalizeItems(cpuItems),
+      });
+
+      return;
+    }
+
+    if (playerRule.type === 'select') {
+      setShowItemSelect(true);
+
+      setItemSelectRule({
+        count: playerRule.count,
+        allowDuplicate: playerRule.allowDuplicate,
+      });
+
+      setItems({
+        red: emptyItems,
+        yellow: normalizeItems(cpuItems),
+      });
+
+      return;
+    }
+
     setItems({
-        red: {
-        delete: stageConfig.unlockedItems.includes(ITEM.DELETE) ? 1 : 0,
-        pushDown: stageConfig.unlockedItems.includes(ITEM.PUSH_DOWN) ? 1 : 0,
-        pushRight: stageConfig.unlockedItems.includes(ITEM.PUSH_RIGHT) ? 1 : 0,
-        },
-        yellow: {
-        delete: 0,
-        pushDown: 0,
-        pushRight: 0,
-        },
+      red: emptyItems,
+      yellow: normalizeItems(cpuItems),
     });
   }
 
-  function getCurrentItems() {
-    return player === CELL.RED ? items.red : items.yellow;
+  function getWeightedRandomItem() {
+    const rand = Math.random();
+
+    if (rand < 0.2) return ITEM.DELETE;
+    if (rand < 0.6) return ITEM.PUSH_RIGHT;
+    return ITEM.PUSH_DOWN;
+  }
+
+  function getPlayerItemsByStage(stage: number) {
+    if (stage <= 5) {
+      return {
+        type: 'fixed',
+        items: { delete: 0, pushDown: 0, pushRight: 0 },
+      };
+    }
+
+    if (stage <= 10) {
+      return {
+        type: 'fixed',
+        items: { delete: 0, pushDown: 1, pushRight: 0 },
+      };
+    }
+
+    if (stage <= 15) {
+      return {
+        type: 'fixed',
+        items: { delete: 0, pushDown: 0, pushRight: 1 },
+      };
+    }
+
+    if (stage <= 20) {
+      return {
+        type: 'fixed',
+        items: { delete: 1, pushDown: 0, pushRight: 0 },
+      };
+    }
+
+    if (stage <= 25) {
+      return {
+        type: 'select',
+        count: 1,
+        allowDuplicate: false,
+      };
+    }
+
+    if (stage <= 30) {
+      return {
+        type: 'select',
+        count: 2,
+        allowDuplicate: false,
+        sameOnly: true,
+      };
+    }
+
+    if (stage <= 40) {
+      return {
+        type: 'select',
+        count: 2,
+        allowDuplicate: true,
+      };
+    }
+
+    if (stage <= 50) {
+      return {
+        type: 'fixed',
+        items: { delete: 1, pushDown: 1, pushRight: 1 },
+      };
+    }
+
+    return {
+      type: 'select',
+      count: 3,
+      allowDuplicate: true,
+    };
+  }
+
+  function getCpuItemsByStage(stage: number) {
+    const result = {
+      delete: 0,
+      pushDown: 0,
+      pushRight: 0,
+    };
+
+    if (stage <= 30) {
+      return result;
+    }
+
+    if (stage <= 40) {
+      const item = getWeightedRandomItem();
+      result[itemKey(item)] += 1;
+      return result;
+    }
+
+    if (stage <= 50) {
+      const picked = new Set();
+
+      while (picked.size < 2) {
+        picked.add(getWeightedRandomItem());
+      }
+
+      picked.forEach((item) => {
+        result[itemKey(item)] += 1;
+      });
+
+      return result;
+    }
+
+    return {
+      delete: 1,
+      pushDown: 1,
+      pushRight: 1,
+    };
+  }
+
+  function itemKey(item) {
+    if (item === ITEM.DELETE) return 'delete';
+    if (item === ITEM.PUSH_DOWN) return 'pushDown';
+    if (item === ITEM.PUSH_RIGHT) return 'pushRight';
   }
 
   function startStage(
@@ -307,6 +481,7 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     boardSizeOverride?: string
   ) {
     const unlocked = unlockedOverride ?? maxUnlockedStage;
+
     const safeStage =
       gameMode === GAME_MODE.STAGE
         ? Math.min(clampStage(targetStage), unlocked)
@@ -325,31 +500,40 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     setWinner(null);
     setLastMove(null);
     setIsCpuThinking(false);
+    setActiveItem(null);
+    setBoardEffectEvent(null);
+    setItemSoundEvent(null);
 
     setupItems(safeStage);
   }
 
-  function chooseStageItem(item) {
+  function chooseStageItems(selectedItems) {
     setShowItemSelect(false);
     setActiveItem(null);
 
+    const cpuItems = getCpuItemsByStage(stage);
+
+    const nextItems = {
+      delete: 0,
+      pushDown: 0,
+      pushRight: 0,
+    };
+
+    selectedItems.forEach((item) => {
+      if (item === ITEM.DELETE) nextItems.delete += 1;
+      if (item === ITEM.PUSH_DOWN) nextItems.pushDown += 1;
+      if (item === ITEM.PUSH_RIGHT) nextItems.pushRight += 1;
+    });
+
     setItems({
-    red: {
-        delete: item === ITEM.DELETE ? 2 : 0,
-        pushDown: item === ITEM.PUSH_DOWN ? 2 : 0,
-        pushRight: item === ITEM.PUSH_RIGHT ? 2 : 0,
-    },
-    yellow: {
-        delete: 0,
-        pushDown: 0,
-        pushRight: 0,
-    },
+      red: nextItems,
+      yellow: normalizeItems(cpuItems),
     });
   }
 
   function switchTurn() {
     setPlayer((prev) => (prev === CELL.RED ? CELL.YELLOW : CELL.RED));
-    setActiveItem(null); 
+    setActiveItem(null);
   }
 
   function unlockNextStageIfNeeded() {
@@ -456,88 +640,121 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     return true;
   }
 
-    function canHumanOperate() {
+  function canHumanOperate() {
     if (!loaded) return false;
     if (result !== RESULT.PLAYING) return false;
 
-    if (gameMode === GAME_MODE.STAGE && player === CELL.YELLOW) {
-         return false;
+    if (
+      (gameMode === GAME_MODE.STAGE || gameMode === GAME_MODE.PVC) &&
+      player === CELL.YELLOW
+    ) {
+      return false;
     }
 
     return true;
-    }
+  }
 
-    function handleColumnPress(column: number) {
+  function handleColumnPress(column: number) {
     if (!canHumanOperate()) return false;
+    if (showItemSelect) return false;
 
-    const current = getCurrentItems();
-    
+    const key = player === CELL.RED ? 'red' : 'yellow';
+    const current = items[key];
+
+    if (!current) {
+      console.warn('items broken', items);
+      return false;
+    }
+
     if (activeItem === ITEM.PUSH_DOWN) {
-        if (current.pushDown <= 0) return false;
+      if (current.pushDown <= 0) return false;
 
-        const itemResult = pushColumnFromTop(board, column);
+      const itemResult = pushColumnFromTop(board, column, player);
+      if (!itemResult) return false;
 
-        if (!itemResult) return false;
+      setItems((prev) => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          pushDown: Math.max(0, prev[key].pushDown - 1),
+        },
+      }));
 
-        const key = player === CELL.RED ? 'red' : 'yellow';
+      const crashCells = [];
 
-        setItems(prev => ({
-            ...prev,
-            [key]: {
-            ...prev[key],
-            pushDown: Math.max(0, prev[key].pushDown - 1),
-            },
-        }));
-        return applyItemResult(itemResult);
+      for (let r = 0; r < board.length; r++) {
+        crashCells.push({ row: r, col: column });
+      }
+
+      notifyItemSound('crash');
+      notifyBoardEffect('crash', crashCells);
+
+      return applyItemResult(itemResult);
     }
 
-    if (activeItem !== null) {
-        return false;
-    }
+    if (activeItem !== null) return false;
 
     return dropPiece(column);
-    }
+  }
 
   function handleCellPress(row: number, column: number) {
     if (!canHumanOperate()) return false;
+    if (showItemSelect) return false;
+
+    const key = player === CELL.RED ? 'red' : 'yellow';
+    const current = items[key];
+
+    if (!current) {
+      console.warn('items undefined', items);
+      return false;
+    }
 
     if (activeItem === ITEM.DELETE) {
-        if (current.delete <= 0) return false;
+      if (current.delete <= 0) return false;
 
-        const itemResult = deletePiece(board, row, column);
+      const itemResult = deletePiece(board, row, column, player);
+      if (!itemResult) return false;
 
-        if (!itemResult) return false;
+      setItems((prev) => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          delete: Math.max(0, prev[key].delete - 1),
+        },
+      }));
 
-        const key = player === CELL.RED ? 'red' : 'yellow';
+      notifyItemSound('delete');
+      notifyBoardEffect('delete', [{ row, col: column }]);
 
-        setItems(prev => ({
-            ...prev,
-            [key]: {
-            ...prev[key],
-            delete: Math.max(0, prev[key].delete - 1),
-            },
-        }));
-        return applyItemResult(itemResult);
+      return applyItemResult(itemResult);
     }
 
     if (activeItem === ITEM.PUSH_RIGHT) {
-         if (current.pushRight <= 0) return false;
+      if (current.pushRight <= 0) return false;
 
-        const itemResult = pushPieceRight(board, row, column);
+      const itemResult = pushPieceRight(board, row, column, player);
+      if (!itemResult) return false;
 
-        if (!itemResult) return false;
+      setItems((prev) => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          pushRight: Math.max(0, prev[key].pushRight - 1),
+        },
+      }));
 
-        const key = player === CELL.RED ? 'red' : 'yellow';
+      notifyItemSound('push');
 
-        setItems(prev => ({
-            ...prev,
-            [key]: {
-            ...prev[key],
-            pushRight: Math.max(0, prev[key].pushRight - 1),
-            },
-        }));
+      const targetCol = Math.min(column + 1, board[0].length - 1);
 
-        return applyItemResult(itemResult);
+      notifyBoardEffect('push', [
+        {
+          row,
+          col: targetCol,
+        },
+      ]);
+
+      return applyItemResult(itemResult);
     }
 
     return false;
@@ -561,12 +778,111 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
           ? stageToCpuLevel(stage)
           : selectedCpuLevel;
 
-      const move = getCpuMove(board, cpuLevel);
+      const cpuItems = items.yellow;
+      const action = getCpuAction(board, cpuLevel, cpuItems);
 
       setIsCpuThinking(false);
 
-      if (move.column !== -1) {
-        dropPiece(move.column);
+      if (action.type === ITEM.DELETE) {
+        const itemResult = deletePiece(
+          board,
+          action.row,
+          action.column,
+          CELL.YELLOW
+        );
+
+        if (!itemResult) return;
+
+        setItems((prev) => ({
+          ...prev,
+          yellow: {
+            ...prev.yellow,
+            delete: Math.max(0, prev.yellow.delete - 1),
+          },
+        }));
+
+        notifyItemSound('delete');
+        notifyBoardEffect('delete', [
+          {
+            row: action.row,
+            col: action.column,
+          },
+        ]);
+
+        applyItemResult(itemResult);
+        return;
+      }
+
+      if (action.type === ITEM.PUSH_RIGHT) {
+        const itemResult = pushPieceRight(
+          board,
+          action.row,
+          action.column,
+          CELL.YELLOW
+        );
+
+        if (!itemResult) return;
+
+        setItems((prev) => ({
+          ...prev,
+          yellow: {
+            ...prev.yellow,
+            pushRight: Math.max(0, prev.yellow.pushRight - 1),
+          },
+        }));
+
+        notifyItemSound('push');
+
+        const targetCol = Math.min(
+          action.column + 1,
+          board[0].length - 1
+        );
+
+        notifyBoardEffect('push', [
+          {
+            row: action.row,
+            col: targetCol,
+          },
+        ]);
+
+        applyItemResult(itemResult);
+        return;
+      }
+
+      if (action.type === ITEM.PUSH_DOWN) {
+        const itemResult = pushColumnFromTop(
+          board,
+          action.column,
+          CELL.YELLOW
+        );
+
+        if (!itemResult) return;
+
+        setItems((prev) => ({
+          ...prev,
+          yellow: {
+            ...prev.yellow,
+            pushDown: Math.max(0, prev.yellow.pushDown - 1),
+          },
+        }));
+
+        const crashCells = [];
+
+        for (let r = 0; r < board.length; r++) {
+          crashCells.push({ row: r, col: action.column });
+        }
+
+        notifyItemSound('crash');
+        notifyBoardEffect('crash', crashCells);
+
+        applyItemResult(itemResult);
+        return;
+      }
+
+      if (action.type === 'drop') {
+        if (action.column !== -1) {
+          dropPiece(action.column);
+        }
       }
     }, config.cpuThinkingMs);
 
@@ -574,7 +890,16 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
       clearTimeout(timer);
       setIsCpuThinking(false);
     };
-  }, [loaded, player, board, result, stage, gameMode, selectedCpuLevel]);
+  }, [
+    loaded,
+    player,
+    board,
+    result,
+    stage,
+    gameMode,
+    selectedCpuLevel,
+    items,
+  ]);
 
   async function selectSkin(id: string) {
     setSelectedSkinId(id);
@@ -586,7 +911,6 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     boardSizeRef.current = size;
 
     await AsyncStorage.setItem(STORAGE_KEYS.BOARD_SIZE, size);
-    startStage(stage, maxUnlockedStage, size);
   }
 
   async function selectCpuLevel(level: number) {
@@ -647,14 +971,18 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     stage,
     maxUnlockedStage,
     maxStage: MAX_STAGE,
-    stageLevel: config.levelLabel,
+    stageLevel:
+      gameMode === GAME_MODE.STAGE
+        ? config.levelLabel
+        : `レベル ${selectedCpuLevel}`,
 
     items,
     activeItem,
     setActiveItem,
 
     showItemSelect,
-    chooseStageItem,
+    itemSelectRule,
+    chooseStageItems,
 
     handleCellPress,
     handleColumnPress,
@@ -673,5 +1001,8 @@ export function useGame(initialStage = 1, mode = GAME_MODE.STAGE) {
     goNextStage,
     goPrevStage,
     resetProgress,
+
+    itemSoundEvent,
+    boardEffectEvent,
   };
 }

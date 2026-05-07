@@ -33,10 +33,9 @@ export default function StageSelectScreen() {
   function openStage(stage: number) {
     if (stage > maxUnlockedStage) return;
 
-    router.push({
-      pathname: '/game',
-      params: { stage: String(stage) },
-    });
+      router.push(
+        `/(tabs)/game?mode=stage&stage=${stage}&routeKey=${Date.now()}`
+    );
   }
 
   return (

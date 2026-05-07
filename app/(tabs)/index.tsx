@@ -39,18 +39,18 @@ export default function TitleScreen() {
       resizeMode="cover"
     >
       <View style={styles.overlay}>
-        <Text style={styles.title}>四目並べ</Text>
-        <Text style={styles.subtitle}>Connect Four</Text>
-
-        {/* ステージモード */}
         <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+          <Text style={styles.title}></Text>
+          <Text style={styles.subtitle}>ボタンをタップしてゲームスタート</Text>
+        </Animated.View>
+        
+        {/* ステージモード */}
           <TouchableOpacity
             style={styles.startButton}
             onPress={() => router.push('/stages')}
           >
             <Text style={styles.startText}>ステージ</Text>
           </TouchableOpacity>
-        </Animated.View>
 
         {/* CPU対戦 */}
         <TouchableOpacity
@@ -87,11 +87,11 @@ const styles = StyleSheet.create({
 
   overlay: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-
+ 
   title: {
     fontSize: 42,
     fontWeight: '900',
@@ -100,8 +100,8 @@ const styles = StyleSheet.create({
   },
 
   subtitle: {
-    fontSize: 16,
-    color: '#eee',
+    fontSize: 18,
+    color: '#fff',
     marginBottom: 40,
   },
 
@@ -120,7 +120,7 @@ const styles = StyleSheet.create({
   },
 
   subButton: {
-    backgroundColor: '#1565c0',
+    backgroundColor: '#ff7043',
     paddingVertical: 14,
     paddingHorizontal: 60,
     borderRadius: 12,
@@ -134,8 +134,11 @@ const styles = StyleSheet.create({
   },
 
   settingButton: {
-    position: 'absolute',
-    bottom: 40,
+    backgroundColor: '#1565c0',
+    paddingVertical: 14,
+    paddingHorizontal: 60,
+    borderRadius: 12,
+    marginBottom: 14,
   },
 
   settingText: {

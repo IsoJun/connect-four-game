@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -18,11 +18,10 @@ import { Audio } from 'expo-av';
 
 import { useGame } from '../../hooks/useGame';
 import { Board } from '../../components/Board';
-import { ItemBar } from '../../components/ItemBar';
-import { SkinSelector } from '../../components/SkinSelector';
 import { StageHeader } from '../../components/StageHeader';
 import { PlayerItemBar } from '../../components/PlayerItemBar';
 import { CELL } from '../../hooks/useGame';
+import { ITEM } from '../../logic/items';
 
 export default function GameScreen() {
   const router = useRouter();
@@ -30,9 +29,31 @@ export default function GameScreen() {
   const isLandscape = width > height;
 
   const params = useLocalSearchParams();
-  const initialStage = Number(params.stage || 1);
-  const mode = params.mode || 'stage';
 
+  const rawStage = params.stage;
+  const initialStage =
+    typeof rawStage === 'string'
+      ? Number(rawStage)
+      : 1;
+
+  const rawMode = params.mode;
+  const mode =
+    typeof rawMode === 'string'
+      ? rawMode
+      : 'stage';
+
+  const rawRouteKey = params.routeKey;
+  const routeKey =
+    typeof rawRouteKey === 'string' ? rawRouteKey : '';
+  const keyParam = params.key;
+
+  // =========================
+  // 🎬 アイテム使用バナー
+  // =========================
+  const [itemEffect, setItemEffect] = useState<{
+    text: string;
+    type: 'delete' | 'crash' | 'push';
+  } | null>(null);
 
   const {
     gameMode,
@@ -54,60 +75,165 @@ export default function GameScreen() {
     setActiveItem,
    
     showItemSelect,
-    chooseStageItem,
+    itemSelectRule,
+    chooseStageItems,
 
     handleCellPress,
     handleColumnPress,
 
     selectedSkin,
-    unlockedSkins,
-    selectSkin,
 
     resetStage,
     goNextStage,
     goPrevStage,
 
     reloadSettings,
-  } = useGame(initialStage, mode);
+
+    itemSoundEvent,
+    boardEffectEvent,
+  } = useGame(initialStage, mode, routeKey);
+
+// =========================
+// 🔄 設定反映
+// =========================
+useFocusEffect(
+  React.useCallback(() => {
+    reloadSettings();
+  }, [])
+);
 
   // =========================
-  // 🔊 音処理
-  // =========================
-  const dropSound = useRef(null);
-  const winSound = useRef(null);
-  const drawSound = useRef(null);
+// 🔊 音処理
+// =========================
+const dropSound = useRef<Audio.Sound | null>(null);
+const winSound = useRef<Audio.Sound | null>(null);
+const drawSound = useRef<Audio.Sound | null>(null);
 
-  useEffect(() => {
-    initSound();
-  }, []);
+// アイテム使用音
+const itemDeleteSound = useRef<Audio.Sound | null>(null); // 消す
+const itemCrashSound = useRef<Audio.Sound | null>(null);  // 潰す
+const itemPushSound = useRef<Audio.Sound | null>(null);   // 右へ
 
-  async function initSound() {
-    try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-      });
+// アイテム使用時は、次の盤面更新音 drop.wav を鳴らさない
+const skipNextDropSound = useRef(false);
 
-      const drop = new Audio.Sound();
-      const win = new Audio.Sound();
-      const draw = new Audio.Sound();
+useEffect(() => {
+  initSound();
 
-      await drop.loadAsync(require('../../assets/sounds/drop.wav'));
-      await win.loadAsync(require('../../assets/sounds/win.wav'));
-      await draw.loadAsync(require('../../assets/sounds/draw.wav'));
+  return () => {
+    unloadSounds();
+  };
+}, []);
 
-      dropSound.current = drop;
-      winSound.current = win;
-      drawSound.current = draw;
-    } catch (e) {
-      console.log('sound init error', e);
-    }
+async function unloadSounds() {
+  try {
+    await dropSound.current?.unloadAsync();
+    await winSound.current?.unloadAsync();
+    await drawSound.current?.unloadAsync();
+
+    await itemDeleteSound.current?.unloadAsync();
+    await itemCrashSound.current?.unloadAsync();
+    await itemPushSound.current?.unloadAsync();
+
+    dropSound.current = null;
+    winSound.current = null;
+    drawSound.current = null;
+
+    itemDeleteSound.current = null;
+    itemCrashSound.current = null;
+    itemPushSound.current = null;
+  } catch (e) {
+    console.log('sound unload error', e);
+  }
+}
+
+async function initSound() {
+  try {
+    await unloadSounds();
+
+    await Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+    });
+
+    const drop = new Audio.Sound();
+    const win = new Audio.Sound();
+    const draw = new Audio.Sound();
+
+    const itemDelete = new Audio.Sound();
+    const itemCrash = new Audio.Sound();
+    const itemPush = new Audio.Sound();
+
+    await drop.loadAsync(require('../../assets/sounds/drop.wav'));
+    await win.loadAsync(require('../../assets/sounds/win.wav'));
+    await draw.loadAsync(require('../../assets/sounds/draw.wav'));
+
+    await itemDelete.loadAsync(require('../../assets/sounds/Item_Delete.wav'));
+    await itemCrash.loadAsync(require('../../assets/sounds/Item_Crash.wav'));
+    await itemPush.loadAsync(require('../../assets/sounds/Item_Push.wav'));
+
+    dropSound.current = drop;
+    winSound.current = win;
+    drawSound.current = draw;
+
+    itemDeleteSound.current = itemDelete;
+    itemCrashSound.current = itemCrash;
+    itemPushSound.current = itemPush;
+  } catch (e) {
+    console.log('sound init error', e);
+  }
+}
+
+async function play(sound: Audio.Sound | null) {
+  try {
+    if (!sound) return;
+
+    const status = await sound.getStatusAsync();
+
+    if (!status.isLoaded) return;
+
+    await sound.stopAsync();
+    await sound.setPositionAsync(0);
+    await sound.playAsync();
+  } catch (e) {
+    console.log('sound play error', e);
+  }
+}
+
+// =========================
+// 🔊 アイテム使用音・バナー
+// =========================
+const prevItemSoundEventId = useRef(0);
+
+useEffect(() => {
+  if (!itemSoundEvent) return;
+  if (itemSoundEvent.id === prevItemSoundEventId.current) return;
+
+  prevItemSoundEventId.current = itemSoundEvent.id;
+
+  // アイテム使用による board 更新では drop.wav を鳴らさない
+  skipNextDropSound.current = true;
+
+  if (itemSoundEvent.type === 'delete') {
+    play(itemDeleteSound.current);
+    setItemEffect({ text: '消す！', type: 'delete' });
   }
 
-  function play(sound) {
-    try {
-      sound?.replayAsync();
-    } catch {}
+  if (itemSoundEvent.type === 'crash') {
+    play(itemCrashSound.current);
+    setItemEffect({ text: '潰す！', type: 'crash' });
   }
+
+  if (itemSoundEvent.type === 'push') {
+    play(itemPushSound.current);
+    setItemEffect({ text: '右へ！', type: 'push' });
+  }
+
+  const timer = setTimeout(() => {
+    setItemEffect(null);
+  }, 700);
+
+  return () => clearTimeout(timer);
+}, [itemSoundEvent]);
 
   // =========================
   // 🔊 盤面更新音
@@ -118,7 +244,11 @@ export default function GameScreen() {
     const now = JSON.stringify(board);
 
     if (prevBoard.current && prevBoard.current !== now) {
-      play(dropSound.current);
+      if (skipNextDropSound.current) {
+        skipNextDropSound.current = false;
+      } else {
+        play(dropSound.current);
+      }
     }
 
     prevBoard.current = now;
@@ -138,15 +268,6 @@ export default function GameScreen() {
     prevResult.current = result;
   }, [result]);
 
-  // =========================
-  // 🔄 設定反映
-  // =========================
-  useFocusEffect(
-    React.useCallback(() => {
-      reloadSettings();
-      initSound(); // 音復旧
-    }, [])
-  );
 
   // =========================
   // 📐 可変盤面サイズ
@@ -181,14 +302,15 @@ export default function GameScreen() {
     player !== CELL.YELLOW ||
     gameMode !== 'pvp';
   
-    function handleMainAction() {
+  function handleMainAction() {
     if (gameMode === 'stage') {
       if (result === 'win') {
-        if (stage < maxStage) {
-          goNextStage();
-        } else {
-          resetStage();
+        if (stage >= maxStage) {
+          router.replace('/');
+          return;
         }
+
+        goNextStage();
         return;
       }
 
@@ -202,13 +324,26 @@ export default function GameScreen() {
   // 🎮 UI
   // =========================
   return (
-    <SafeAreaView style={styles.container}>
-      <View
-        style={[
-          styles.layout,
-          { flexDirection: isLandscape ? 'row' : 'column' },
-        ]}
-      >
+  <SafeAreaView style={styles.container}>
+    <View
+      style={[
+        styles.layout,
+        { flexDirection: isLandscape ? 'row' : 'column' },
+      ]}
+    >
+      {itemEffect && (
+        <View
+          style={[
+            styles.itemEffectBanner,
+            itemEffect.type === 'delete' && styles.itemEffectDelete,
+            itemEffect.type === 'crash' && styles.itemEffectCrash,
+            itemEffect.type === 'push' && styles.itemEffectPush,
+          ]}
+        >
+          <Text style={styles.itemEffectText}>{itemEffect.text}</Text>
+        </View>
+      )}
+      
         {/* 盤面 */}
         <View
           style={[
@@ -242,6 +377,7 @@ export default function GameScreen() {
           )}
         </View>
           <Board
+            key={selectedSkin.id}
             board={board}
             cellSize={cellSize}
             cellMargin={cellMargin}
@@ -252,6 +388,9 @@ export default function GameScreen() {
             yellowPiece={selectedSkin.yellow}
             onColumnPress={handleColumnPress}
             onCellPress={handleCellPress}
+            currentPlayer={player}
+            disabled={showItemSelect}
+            boardEffectEvent={boardEffectEvent}
           />
         </View>
 
@@ -261,6 +400,7 @@ export default function GameScreen() {
             styles.uiScroll,
             {
               width: isLandscape ? '35%' : '100%',
+              backgroundColor: '#e3ede0',
             },
           ]}
           contentContainerStyle={styles.uiArea}
@@ -307,13 +447,16 @@ export default function GameScreen() {
             onCancelItem={() => setActiveItem(null)}
           />
 
-          <SkinSelector
-            skins={unlockedSkins}
-            selectedSkinId={selectedSkin.id}
-            onSelectSkin={selectSkin}
-          />
         </ScrollView>
       </View>
+
+      {showItemSelect && (
+        <ItemSelectPanel
+          count={itemSelectRule.count}
+          allowDuplicate={itemSelectRule.allowDuplicate}
+          onConfirm={chooseStageItems}
+        />
+      )}
 
       {/* 🎉 勝利ポップ */}
       {result !== 'playing' && (
@@ -321,9 +464,13 @@ export default function GameScreen() {
         <View style={styles.clearModal}>
 
           <Text style={styles.clearTitle}>
-            {getTitle(gameMode, result, winner)}
+            {getTitle(gameMode, result, winner, stage, maxStage)}
           </Text>
-
+          {gameMode === 'stage' && result === 'win' && stage >= maxStage && (
+            <Text style={styles.completeMessage}>
+              全60ステージクリアおめでとうございます！
+            </Text>
+          )}
           {/* メインボタン */}
           <TouchableOpacity
             style={styles.mainButton}
@@ -351,9 +498,13 @@ export default function GameScreen() {
   );
 }
 
-function getTitle(mode, result, winner) {
+function getTitle(mode, result, winner, stage, maxStage) {
   if (mode === 'stage') {
-    if (result === 'win') return 'ステージクリア！';
+    if (result === 'win') {
+      if (stage >= maxStage) return 'すばらしい！';
+      return 'ステージクリア！';
+    }
+
     if (result === 'lose') return '残念...';
     if (result === 'draw') return '引き分け';
   }
@@ -398,6 +549,100 @@ function getResultText(result: string, winner: number | null, gameMode: string) 
 
   return '';
 }
+
+function ItemSelectPanel({ count, allowDuplicate, onConfirm }) {
+  const [selectedItems, setSelectedItems] = React.useState([]);
+
+  function selectItem(item) {
+    if (!allowDuplicate && selectedItems.includes(item)) {
+      return;
+    }
+
+    if (selectedItems.length >= count) {
+      return;
+    }
+
+    setSelectedItems((prev) => [...prev, item]);
+  }
+
+  function removeLast() {
+    setSelectedItems((prev) => prev.slice(0, -1));
+  }
+
+  const canConfirm = selectedItems.length === count;
+
+  return (
+    <View style={styles.itemSelectPanel}>
+      <Text style={styles.itemSelectTitle}>
+        アイテムを {count} 個選んでください{allowDuplicate ? '（重複OK）' : ''}
+      </Text>
+
+      <View style={styles.itemSelectRow}>
+        <TouchableOpacity
+          style={[
+            styles.itemSelectButton,
+            selectedItems.includes(ITEM.DELETE) && styles.itemSelectButtonSelected,
+          ]}
+          onPress={() => selectItem(ITEM.DELETE)}
+        >
+          <Text style={styles.itemSelectButtonText}>消す</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.itemSelectButton,
+            selectedItems.includes(ITEM.PUSH_DOWN) && styles.itemSelectButtonSelected,
+          ]}
+          onPress={() => selectItem(ITEM.PUSH_DOWN)}
+        >
+          <Text style={styles.itemSelectButtonText}>潰す</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.itemSelectButton,
+            selectedItems.includes(ITEM.PUSH_RIGHT) && styles.itemSelectButtonSelected,
+          ]}
+          onPress={() => selectItem(ITEM.PUSH_RIGHT)}
+        >
+          <Text style={styles.itemSelectButtonText}>右へ</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.itemSelectStatus}>
+        選択中: {selectedItems.map(getItemLabel).join(' / ') || 'なし'}
+      </Text>
+
+      <View style={styles.itemSelectRow}>
+        <TouchableOpacity
+          style={styles.itemSelectSubButton}
+          onPress={removeLast}
+        >
+          <Text style={styles.itemSelectButtonText}>1つ戻す</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[
+            styles.itemSelectConfirmButton,
+            !canConfirm && styles.disabledButton,
+          ]}
+          disabled={!canConfirm}
+          onPress={() => onConfirm(selectedItems)}
+        >
+          <Text style={styles.itemSelectButtonText}>決定</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+function getItemLabel(item) {
+  if (item === ITEM.DELETE) return '消す';
+  if (item === ITEM.PUSH_DOWN) return '潰す';
+  if (item === ITEM.PUSH_RIGHT) return '右へ';
+  return '';
+}
+
 // =========================
 // 🎨 Style
 // =========================
@@ -426,8 +671,9 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    paddingBottom: 112,
   },
   clearModal: {
     backgroundColor: '#fff',
@@ -488,5 +734,105 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '900',
     color: '#ff7043',
+  },
+
+  itemSelectPanel: {
+    width: '100%',
+    backgroundColor: '#dbd87ae2',
+    borderRadius: 14,
+    padding: 12,
+    marginVertical: 10,
+    alignItems: 'center',
+  },
+  itemSelectTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    marginBottom: 8,
+  },
+  itemSelectRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  itemSelectButton: {
+    backgroundColor: '#1565c0',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 3,
+    borderColor: 'transparent',
+  },
+  itemSelectSubButton: {
+    backgroundColor: '#78909c',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  itemSelectConfirmButton: {
+    backgroundColor: '#ff7043',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  itemSelectButtonText: {
+    color: '#ffffff',
+    fontWeight: '900',
+  },
+  itemSelectStatus: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#455a64',
+    marginBottom: 8,
+  },
+  disabledButton: {
+    opacity: 0.4,
+  },
+  itemEffectBanner: {
+    position: 'absolute',
+    top: '55%',
+    alignSelf: 'center',
+    zIndex: 999,
+    paddingHorizontal: 28,
+    paddingVertical: 14,
+    borderRadius: 999,
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+
+  itemEffectDelete: {
+    backgroundColor: 'rgba(80, 120, 255, 0.92)',
+  },
+
+  itemEffectCrash: {
+    backgroundColor: 'rgba(255, 80, 80, 0.92)',
+  },
+
+  itemEffectPush: {
+    backgroundColor: 'rgba(60, 180, 100, 0.92)',
+  },
+
+  itemEffectText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '900',
+  },
+
+  itemSelectButtonSelected: {
+    backgroundColor: '#ff7043',
+    borderColor: '#ffccbc',
+  },
+
+  completeMessage: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#455a64',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 22,
   },
 });

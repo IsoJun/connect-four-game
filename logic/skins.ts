@@ -27,7 +27,7 @@ export const SKINS: Skin[] = [
   },
   {
     id: 'metal',
-    name: 'メタル',
+    name: '荷物',
     description: 'ステージ10クリアで解放',
     unlockStage: 10,
     red: require('../assets/images/skins/metal_red.png'),
@@ -35,7 +35,7 @@ export const SKINS: Skin[] = [
   },
   {
     id: 'neon',
-    name: 'ネオン',
+    name: '犬猫',
     description: 'ステージ25クリアで解放',
     unlockStage: 25,
     red: require('../assets/images/skins/neon_red.png'),
@@ -43,7 +43,7 @@ export const SKINS: Skin[] = [
   },
   {
     id: 'gold',
-    name: 'ゴールド',
+    name: '電車',
     description: 'ステージ45クリアで解放',
     unlockStage: 45,
     red: require('../assets/images/skins/gold_red.png'),
@@ -51,7 +51,7 @@ export const SKINS: Skin[] = [
   },
   {
     id: 'master',
-    name: 'マスター',
+    name: '宝石',
     description: 'ステージ60クリアで解放',
     unlockStage: 60,
     red: require('../assets/images/skins/master_red.png'),
