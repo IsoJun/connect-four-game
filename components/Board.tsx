@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ImageSourcePropType,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { Cell } from './Cell';
 import { Board as BoardType, CELL, Position } from '../logic/gameLogic';
@@ -59,6 +60,22 @@ export function Board({
   currentPlayer,
   boardEffectEvent,
 }: BoardProps) {
+  const fixedCellSize = Math.floor(cellSize);
+  const fixedCellMargin = Math.floor(cellMargin);
+  const fixedBoardPadding = Math.floor(boardPadding);
+
+  const rows = board.length;
+  const cols = board[0]?.length ?? 0;
+
+  const cellOuterSize = fixedCellSize + fixedCellMargin * 2;
+
+  const boardWidth = cellOuterSize * cols + fixedBoardPadding * 2;
+  const boardHeight = cellOuterSize * rows + fixedBoardPadding * 2;
+
+  const boardRadius = Math.floor(fixedCellSize * 0.22);
+  const highlightRadius = Math.floor(fixedCellSize * 0.16);
+  const effectRadius = Math.floor(fixedCellSize / 2);
+
   const [highlightColumn, setHighlightColumn] = useState(null);
   const clearTimer = useRef(null);
 
@@ -174,7 +191,10 @@ export function Board({
   }
 
   return (
-    <View
+    <LinearGradient
+      colors={['#42a5f5', '#1976d2', '#0d47a1']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
       style={[
         styles.board,
         {
@@ -199,16 +219,19 @@ export function Board({
                 style={[
                   styles.cellWrap,
                   {
-                    width: cellSize + cellMargin * 2,
-                    height: cellSize + cellMargin * 2,
+                    width: cellOuterSize,
+                    height: cellOuterSize,
                   },
-                  highlighted && styles.columnBackground,
+                  highlighted && {
+                    backgroundColor: 'rgba(255,235,59,0.12)',
+                    borderRadius: highlightRadius,
+                  },
                 ]}
               >
                 <Cell
                   key={`cell-${rowIndex}-${columnIndex}`}
-                  size={cellSize}
-                  margin={cellMargin}
+                  size={fixedCellSize}
+                  margin={fixedCellMargin}
                   imageSource={getPieceImage(cell)}
                   isWinning={isWinningCell(rowIndex, columnIndex)}
                   isSelectable={selectable}
@@ -225,11 +248,11 @@ export function Board({
                     style={[
                       styles.itemBoardEffectOverlay,
                       {
-                        left: cellMargin,
-                        right: cellMargin,
-                        top: cellMargin,
-                        bottom: cellMargin,
-                        borderRadius: cellSize / 2,
+                        left: fixedCellMargin,
+                        right: fixedCellMargin,
+                        top: fixedCellMargin,
+                        bottom: fixedCellMargin,
+                        borderRadius: effectRadius,
                       },
                       activeBoardEffect.type === 'delete' &&
                         styles.itemBoardEffectDelete,
@@ -249,44 +272,49 @@ export function Board({
           })}
         </View>
       ))}
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   board: {
-    backgroundColor: '#1976d2',
-    borderRadius: 16,
+    borderRadius: 18,
     position: 'relative',
+
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.18)',
   },
+
   row: {
     flexDirection: 'row',
   },
+
   cellWrap: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  columnBackground: {
-    backgroundColor: 'rgba(255,235,59,0.12)',
-    borderRadius: 8,
-  },
+
   itemBoardEffectOverlay: {
     position: 'absolute',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 20,
   },
+
   itemBoardEffectDelete: {
     backgroundColor: 'rgba(80, 140, 255, 0.55)',
   },
+
   itemBoardEffectCrash: {
     backgroundColor: 'rgba(255, 80, 80, 0.55)',
   },
+
   itemBoardEffectPush: {
     backgroundColor: 'rgba(60, 180, 100, 0.55)',
   },
+
   itemBoardEffectText: {
     color: '#ffffff',
     fontSize: 24,

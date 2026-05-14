@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -7,35 +7,51 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useFocusEffect } from 'expo-router';
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { MAX_STAGE } from '../../logic/stages';
+import {
+  initCommonSounds,
+  playTapSound,
+} from '../../utils/sound';
 
 export default function StageSelectScreen() {
   const router = useRouter();
+
   const [maxUnlockedStage, setMaxUnlockedStage] = useState(1);
 
-  // 🔥 ここが重要
   useFocusEffect(
     React.useCallback(() => {
       loadProgress();
+      initCommonSounds();
     }, [])
   );
 
   async function loadProgress() {
     const saved = await AsyncStorage.getItem('maxUnlockedStage');
+
     const value = saved ? Number(saved) : 1;
+
     setMaxUnlockedStage(Math.max(1, value));
   }
 
-  function openStage(stage: number) {
+  async function openStage(stage: number) {
     if (stage > maxUnlockedStage) return;
 
-      router.push(
-        `/(tabs)/game?mode=stage&stage=${stage}&routeKey=${Date.now()}`
+    await playTapSound();
+
+    router.push(
+      `/(tabs)/game?mode=stage&stage=${stage}&routeKey=${Date.now()}`
     );
+  }
+
+  async function handleBack() {
+    await playTapSound();
+    router.back();
   }
 
   return (
@@ -49,6 +65,7 @@ export default function StageSelectScreen() {
       <ScrollView contentContainerStyle={styles.grid}>
         {Array.from({ length: MAX_STAGE }).map((_, index) => {
           const stage = index + 1;
+
           const unlocked = stage <= maxUnlockedStage;
 
           return (
@@ -76,7 +93,7 @@ export default function StageSelectScreen() {
 
       <TouchableOpacity
         style={styles.backButton}
-        onPress={() => router.back()}
+        onPress={handleBack}
       >
         <Text style={styles.backText}>← 戻る</Text>
       </TouchableOpacity>
@@ -91,17 +108,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 16,
   },
+
   title: {
     fontSize: 32,
     fontWeight: '900',
     marginBottom: 6,
   },
+
   progress: {
     fontSize: 15,
     fontWeight: '700',
     color: '#555',
     marginBottom: 16,
   },
+
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -109,6 +129,7 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingBottom: 24,
   },
+
   stageButton: {
     width: 58,
     height: 58,
@@ -117,22 +138,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   lockedButton: {
     backgroundColor: '#cfd8dc',
   },
+
   stageText: {
     color: '#ffffff',
     fontSize: 20,
     fontWeight: '900',
   },
+
   lockedText: {
     color: '#607d8b',
     fontSize: 18,
   },
+
   backButton: {
     marginTop: 10,
     paddingVertical: 12,
   },
+
   backText: {
     fontSize: 16,
     fontWeight: '800',

@@ -1,5 +1,5 @@
 // @ts-nocheck
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,10 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getUnlockedSkins } from '../../logic/skins';
+import {
+  initCommonSounds,
+  playTapSound,
+} from '../../utils/sound';
 
 const STORAGE_KEYS = {
   MAX_UNLOCKED_STAGE: 'maxUnlockedStage',
@@ -47,6 +51,10 @@ export default function SettingsScreen() {
       loadSettings();
     }, [])
   );
+
+  useEffect(() => {
+    initCommonSounds();
+  }, []);
 
   async function loadSettings() {
     const savedStage = await AsyncStorage.getItem(
@@ -243,17 +251,25 @@ export default function SettingsScreen() {
           <Text style={styles.sectionDescription}>
             数字が大きいほどCPUが強くなります。
           </Text>
+          <Text style={styles.cpuUnlockText}>
+            「神」は全60ステージクリアで解放
+          </Text>
 
           <View style={styles.levelGrid}>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((lv) => {
+            {Array.from({ length: 11 }, (_, i) => i + 1).map((lv) => {
               const active = lv === draftCpuLevel;
+
+              const locked =
+                lv === 11 && maxUnlockedStage < 60;
 
               return (
                 <TouchableOpacity
                   key={lv}
+                  disabled={locked}
                   style={[
                     styles.levelButton,
                     active && styles.activeLevelButton,
+                    locked && styles.lockedLevelButton,
                   ]}
                   onPress={() => setDraftCpuLevel(lv)}
                 >
@@ -261,9 +277,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.levelText,
                       active && styles.activeLevelText,
+                      locked && styles.lockedLevelText,
                     ]}
                   >
-                    {lv}
+                    {lv === 11 ? '神' : lv}
                   </Text>
                 </TouchableOpacity>
               );
@@ -292,17 +309,23 @@ export default function SettingsScreen() {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.cancelButton}
-          onPress={cancelSettings}
+          onPress={async () => {
+            await playTapSound();
+            cancelSettings();
+          }}
         >
           <Text style={styles.footerText}>キャンセル</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.saveButton}
-          onPress={saveSettings}
-        >
-          <Text style={styles.footerText}>OK</Text>
-        </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.saveButton}
+        onPress={async () => {
+          await playTapSound();
+          saveSettings();
+        }}
+      >
+        <Text style={styles.footerText}>OK</Text>
+      </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -542,6 +565,19 @@ const styles = StyleSheet.create({
   },
   activeLevelText: {
     color: '#fff',
+  },
+  cpuUnlockText: {
+  fontSize: 12,
+  color: '#607d8b',
+  marginBottom: 10,
+  fontWeight: '700',
+  },
+    lockedLevelButton: {
+    backgroundColor: '#cfd8dc',
+    opacity: 0.5,
+  },
+  lockedLevelText: {
+    color: '#78909c',
   },
 
   resetButton: {

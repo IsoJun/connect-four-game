@@ -27,7 +27,9 @@ export function ItemBar({
   onSelectItem,
   onCancelItem,
 }: ItemBarProps) {
-  const hasActiveItem = activeItem !== ITEM.NONE && activeItem !== null;
+  const hasActiveItem =
+    activeItem !== ITEM.NONE &&
+    activeItem !== null;
 
   return (
     <View style={styles.container}>
@@ -63,7 +65,9 @@ export function ItemBar({
           onPress={onCancelItem}
           disabled={disabled}
         >
-          <Text style={styles.cancelButtonText}>アイテム取消</Text>
+          <Text style={styles.cancelButtonText}>
+            アイテム取消
+          </Text>
         </TouchableOpacity>
       )}
     </View>
@@ -85,12 +89,21 @@ function ItemButton({
   disabled,
   onPress,
 }: ItemButtonProps) {
+  const available = !disabled && count > 0;
+
   return (
     <TouchableOpacity
       style={[
         styles.itemButton,
-        active && styles.itemButtonActive,
-        disabled && styles.disabled,
+
+        available &&
+          styles.itemButtonAvailable,
+
+        active &&
+          styles.itemButtonActive,
+
+        disabled &&
+          styles.disabled,
       ]}
       disabled={disabled}
       onPress={onPress}
@@ -108,40 +121,87 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginVertical: 8,
   },
+
   row: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     justifyContent: 'center',
   },
+
   itemButton: {
     backgroundColor: '#1565c0',
+
     paddingHorizontal: 14,
     paddingVertical: 9,
-    borderRadius: 10,
-    minWidth: 76,
+
+    borderRadius: 12,
+
+    minWidth: 82,
+
     alignItems: 'center',
+
+    borderWidth: 3,
+    borderColor: '#90a4ae',
   },
+
+  // 使用可能
+  itemButtonAvailable: {
+    borderColor: '#ffe082',
+
+    shadowColor: '#ffd54f',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 0.9,
+    shadowRadius: 8,
+
+    elevation: 6,
+  },
+
+  // 選択中
   itemButtonActive: {
     backgroundColor: '#ff7043',
+
+    borderColor: '#fff3e0',
+
+    shadowColor: '#ffb74d',
+    shadowOffset: {
+      width: 0,
+      height: 0,
+    },
+    shadowOpacity: 1,
+    shadowRadius: 12,
+
+    elevation: 10,
+
+    transform: [{ scale: 1.06 }],
   },
+
   itemButtonText: {
     color: '#ffffff',
     fontWeight: '900',
     fontSize: 14,
   },
+
   cancelButton: {
     marginTop: 8,
-    backgroundColor: '#9e9e9e',
-    paddingHorizontal: 14,
+
+    backgroundColor: '#78909c',
+
+    paddingHorizontal: 16,
     paddingVertical: 8,
+
     borderRadius: 10,
   },
+
   cancelButtonText: {
     color: '#ffffff',
     fontWeight: '800',
     fontSize: 13,
   },
+
   disabled: {
     opacity: 0.4,
   },

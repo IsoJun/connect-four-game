@@ -30,7 +30,11 @@ import {
   getPrevStage,
 } from '../logic/stages';
 
-import { getSkinById, getUnlockedSkins } from '../logic/skins';
+import {
+  getSkinById,
+  getUnlockedSkins,
+  SKINS,
+} from '../logic/skins';
 
 type ItemSoundType = 'delete' | 'crash' | 'push';
 
@@ -95,7 +99,7 @@ function stageToCpuLevel(stage: number): number {
 
 function clampCpuLevel(level: number): number {
   if (Number.isNaN(level)) return 5;
-  return Math.min(10, Math.max(1, level));
+  return Math.min(11, Math.max(1, level));
 }
 
 function normalizeMode(mode: string) {
@@ -124,6 +128,7 @@ export function useGame(initialStage, mode, routeKey) {
   const [activeItem, setActiveItem] = useState(null);
   const [items, setItems] = useState(defaultBattleItems);
   const [pvpItems, setPvpItems] = useState(defaultBattleItems);
+  const pvpItemsRef = useRef(defaultBattleItems);
 
   const [showItemSelect, setShowItemSelect] = useState(false);
   const [itemSelectRule, setItemSelectRule] = useState({
@@ -134,6 +139,7 @@ export function useGame(initialStage, mode, routeKey) {
   const [selectedSkinId, setSelectedSkinId] = useState('normal');
   const [selectedCpuLevel, setSelectedCpuLevel] = useState(5);
   const [isCpuThinking, setIsCpuThinking] = useState(false);
+  const [unlockedSkin, setUnlockedSkin] = useState(null);
 
   const [itemSoundEvent, setItemSoundEvent] =
     useState<ItemSoundEvent | null>(null);
@@ -175,6 +181,17 @@ export function useGame(initialStage, mode, routeKey) {
       pushDown: items?.pushDown ?? 0,
       pushRight: items?.pushRight ?? 0,
     };
+  }
+
+  function normalizeBattleItems(nextItems) {
+    return {
+      red: normalizeItems(nextItems?.red),
+      yellow: normalizeItems(nextItems?.yellow),
+    };
+  }
+
+  function isSameBattleItems(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
   }
 
   useEffect(() => {
@@ -223,11 +240,12 @@ export function useGame(initialStage, mode, routeKey) {
       ? JSON.parse(savedPvpItems)
       : defaultBattleItems;
 
+    const normalizedPvpItems = normalizeBattleItems(nextPvpItems);
+
     setMaxUnlockedStage(unlocked);
-    setPvpItems({
-      red: normalizeItems(nextPvpItems.red),
-      yellow: normalizeItems(nextPvpItems.yellow),
-    });
+    setPvpItems(normalizedPvpItems);
+    pvpItemsRef.current = normalizedPvpItems;
+
     setBoardSize(nextBoardSize);
     boardSizeRef.current = nextBoardSize;
 
@@ -260,8 +278,14 @@ export function useGame(initialStage, mode, routeKey) {
       ? JSON.parse(savedPvpItems)
       : defaultBattleItems;
 
+    const normalizedPvpItems = normalizeBattleItems(nextPvpItems);
+
     const boardSizeChanged = nextBoardSize !== boardSizeRef.current;
     const cpuLevelChanged = nextCpuLevel !== selectedCpuLevel;
+    const pvpItemsChanged = !isSameBattleItems(
+      normalizedPvpItems,
+      pvpItemsRef.current
+    );
 
     const currentStageLocked =
       gameMode === GAME_MODE.STAGE && stage > nextUnlockedStage;
@@ -269,10 +293,9 @@ export function useGame(initialStage, mode, routeKey) {
     setSelectedSkinId(nextSkinId);
     setSelectedCpuLevel(nextCpuLevel);
     setMaxUnlockedStage(nextUnlockedStage);
-    setPvpItems({
-      red: normalizeItems(nextPvpItems.red),
-      yellow: normalizeItems(nextPvpItems.yellow),
-    });
+
+    setPvpItems(normalizedPvpItems);
+    pvpItemsRef.current = normalizedPvpItems;
 
     if (boardSizeChanged) {
       setBoardSize(nextBoardSize);
@@ -292,6 +315,15 @@ export function useGame(initialStage, mode, routeKey) {
           : 1;
 
       startStage(nextStage, nextUnlockedStage, nextBoardSize);
+      return;
+    }
+
+    if (gameMode === GAME_MODE.PVP || gameMode === GAME_MODE.PVC) {
+      setActiveItem(null);
+      setItems({
+        red: normalizeItems(pvpItemsRef.current.red),
+        yellow: normalizeItems(pvpItemsRef.current.yellow),
+      });
     }
   }
 
@@ -314,8 +346,8 @@ export function useGame(initialStage, mode, routeKey) {
 
     if (gameMode === GAME_MODE.PVP || gameMode === GAME_MODE.PVC) {
       setItems({
-        red: normalizeItems(pvpItems.red),
-        yellow: normalizeItems(pvpItems.yellow),
+        red: normalizeItems(pvpItemsRef.current.red),
+        yellow: normalizeItems(pvpItemsRef.current.yellow),
       });
 
       return;
@@ -543,6 +575,17 @@ export function useGame(initialStage, mode, routeKey) {
       MAX_STAGE,
       Math.max(maxUnlockedStage, stage + 1)
     );
+
+    // 新規解放スキン確認
+    const newlyUnlockedSkin = SKINS.find(
+      (skin) =>
+        skin.unlockStage === nextUnlockedStage &&
+        skin.unlockStage > maxUnlockedStage
+    );
+
+    if (newlyUnlockedSkin) {
+      setUnlockedSkin(newlyUnlockedSkin);
+    }
 
     if (nextUnlockedStage > maxUnlockedStage) {
       saveUnlockedStage(nextUnlockedStage);
@@ -974,7 +1017,9 @@ export function useGame(initialStage, mode, routeKey) {
     stageLevel:
       gameMode === GAME_MODE.STAGE
         ? config.levelLabel
-        : `レベル ${selectedCpuLevel}`,
+        : selectedCpuLevel === 11
+          ? '神'
+          : `レベル ${selectedCpuLevel}`,
 
     items,
     activeItem,
@@ -1004,5 +1049,7 @@ export function useGame(initialStage, mode, routeKey) {
 
     itemSoundEvent,
     boardEffectEvent,
+    unlockedSkin,
+    setUnlockedSkin,
   };
 }

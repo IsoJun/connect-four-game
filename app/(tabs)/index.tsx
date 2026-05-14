@@ -10,10 +10,21 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
+import AdBanner from '../../components/AdBanner';
+import { requestTrackingPermissionIfNeeded } from '../../utils/requestTrackingPermission';
+import {
+  initCommonSounds,
+  playTapSound,
+} from '../../utils/sound';
+
 export default function TitleScreen() {
   const router = useRouter();
-
   const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    requestTrackingPermissionIfNeeded();
+    initCommonSounds();
+  }, []);
 
   useEffect(() => {
     Animated.loop(
@@ -30,57 +41,74 @@ export default function TitleScreen() {
         }),
       ])
     ).start();
-  }, []);
+  }, [scaleAnim]);
 
   return (
-    <ImageBackground
-      source={require('../../assets/images/title-screen.png')}
-      style={styles.container}
-      resizeMode="cover"
-    >
-      <View style={styles.overlay}>
-        <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-          <Text style={styles.title}></Text>
-          <Text style={styles.subtitle}>ボタンをタップしてゲームスタート</Text>
-        </Animated.View>
-        
-        {/* ステージモード */}
+    <View style={styles.screen}>
+      <ImageBackground
+        source={require('../../assets/images/title-screen.png')}
+        style={styles.container}
+        resizeMode="cover"
+      >
+        <View style={styles.overlay}>
+          <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <Text style={styles.title}></Text>
+            <Text style={styles.subtitle}>ボタンをタップしてゲームスタート</Text>
+          </Animated.View>
+
           <TouchableOpacity
             style={styles.startButton}
-            onPress={() => router.push('/stages')}
+            onPress={async () => {
+              await playTapSound();
+              router.push('/stages');
+            }}
           >
             <Text style={styles.startText}>ステージ</Text>
           </TouchableOpacity>
 
-        {/* CPU対戦 */}
-        <TouchableOpacity
-          style={styles.subButton}
-          onPress={() => router.push('/game?mode=pvc')}
-        >
-          <Text style={styles.subText}>CPU対戦</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.subButton}
+            onPress={async () => {
+              await playTapSound();
+              router.push('/game?mode=pvc');
+            }}
+          >
+            <Text style={styles.subText}>CPU対戦</Text>
+          </TouchableOpacity>
 
-        {/* 2人対戦 */}
-        <TouchableOpacity
-          style={styles.subButton}
-          onPress={() => router.push('/game?mode=pvp')}
-        >
-          <Text style={styles.subText}>2人対戦</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.subButton}
+            onPress={async () => {
+              await playTapSound();
+              router.push('/game?mode=pvp');
+            }}
+          >
+            <Text style={styles.subText}>2人対戦</Text>
+          </TouchableOpacity>
 
-        {/* 設定 */}
-        <TouchableOpacity
-          style={styles.settingButton}
-          onPress={() => router.push('/settings')}
-        >
-          <Text style={styles.settingText}>設定</Text>
-        </TouchableOpacity>
-      </View>
-    </ImageBackground>
+          <TouchableOpacity
+            style={styles.settingButton}
+            onPress={async () => {
+              await playTapSound();
+              router.push('/settings');
+            }}
+          >
+            <Text style={styles.settingText}>設定</Text>
+          </TouchableOpacity>
+        </View>
+      </ImageBackground>
+
+      <AdBanner position="bottom" />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+
   container: {
     flex: 1,
   },
@@ -91,7 +119,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
- 
+
   title: {
     fontSize: 42,
     fontWeight: '900',

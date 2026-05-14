@@ -15,6 +15,8 @@ import {
   useFocusEffect,
 } from 'expo-router';
 import { Audio } from 'expo-av';
+import { LinearGradient } from 'expo-linear-gradient';
+import { playTapSound } from '../../utils/sound';
 
 import { useGame } from '../../hooks/useGame';
 import { Board } from '../../components/Board';
@@ -22,6 +24,7 @@ import { StageHeader } from '../../components/StageHeader';
 import { PlayerItemBar } from '../../components/PlayerItemBar';
 import { CELL } from '../../hooks/useGame';
 import { ITEM } from '../../logic/items';
+import AdBanner from '../../components/AdBanner';
 
 export default function GameScreen() {
   const router = useRouter();
@@ -91,15 +94,30 @@ export default function GameScreen() {
 
     itemSoundEvent,
     boardEffectEvent,
+    unlockedSkin,
+    setUnlockedSkin,
   } = useGame(initialStage, mode, routeKey);
 
 // =========================
 // 🔄 設定反映
 // =========================
+const firstFocusRef = useRef(true);
+
 useFocusEffect(
   React.useCallback(() => {
     reloadSettings();
-  }, [])
+
+    // 初回表示ではリセットしない
+    if (firstFocusRef.current) {
+      firstFocusRef.current = false;
+      return;
+    }
+
+    // 設定画面から戻った時だけ
+    if (gameMode === 'pvc' || gameMode === 'pvp') {
+      resetStage();
+    }
+  }, [gameMode])
 );
 
   // =========================
@@ -116,6 +134,7 @@ const itemPushSound = useRef<Audio.Sound | null>(null);   // 右へ
 
 // アイテム使用時は、次の盤面更新音 drop.wav を鳴らさない
 const skipNextDropSound = useRef(false);
+const skipBoardChangeSound = useRef(false);
 
 useEffect(() => {
   initSound();
@@ -152,7 +171,7 @@ async function initSound() {
     await unloadSounds();
 
     await Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true,
+      playsInSilentModeIOS: false,
     });
 
     const drop = new Audio.Sound();
@@ -244,8 +263,16 @@ useEffect(() => {
     const now = JSON.stringify(board);
 
     if (prevBoard.current && prevBoard.current !== now) {
-      if (skipNextDropSound.current) {
+
+      // リセット・ステージ変更など
+      if (skipBoardChangeSound.current) {
+        skipBoardChangeSound.current = false;
+
+      // アイテム使用後
+      } else if (skipNextDropSound.current) {
         skipNextDropSound.current = false;
+
+      // 通常のコマ配置
       } else {
         play(dropSound.current);
       }
@@ -303,213 +330,266 @@ useEffect(() => {
     gameMode !== 'pvp';
   
   function handleMainAction() {
+    setUnlockedSkin(null);
     if (gameMode === 'stage') {
       if (result === 'win') {
         if (stage >= maxStage) {
           router.replace('/');
           return;
         }
-
+        skipBoardChangeSound.current = true;
         goNextStage();
         return;
       }
-
+    skipBoardChangeSound.current = true;
       resetStage();
       return;
     }
-
+    skipBoardChangeSound.current = true;
     resetStage();
   }
   // =========================
   // 🎮 UI
   // =========================
   return (
-  <SafeAreaView style={styles.container}>
-    <View
-      style={[
-        styles.layout,
-        { flexDirection: isLandscape ? 'row' : 'column' },
-      ]}
+    <LinearGradient
+      colors={['#f7fbff', '#d9ecff']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 0, y: 1 }}
+      style={styles.screen}
     >
-      {itemEffect && (
+      <View style={styles.gameArea}>
+      <SafeAreaView style={styles.container}>
         <View
           style={[
-            styles.itemEffectBanner,
-            itemEffect.type === 'delete' && styles.itemEffectDelete,
-            itemEffect.type === 'crash' && styles.itemEffectCrash,
-            itemEffect.type === 'push' && styles.itemEffectPush,
+            styles.layout,
+            { flexDirection: isLandscape ? 'row' : 'column' },
           ]}
         >
-          <Text style={styles.itemEffectText}>{itemEffect.text}</Text>
-        </View>
-      )}
-      
-        {/* 盤面 */}
-        <View
-          style={[
-            styles.boardArea,
-            { width: isLandscape ? '65%' : '100%' },
-          ]}
-        >
-          <View style={styles.infoPanel}>
-          <Text style={styles.modeText}>
-            {gameMode === 'stage' && 'ステージモード'}
-            {gameMode === 'pvc' && 'CPU対戦'}
-            {gameMode === 'pvp' && '2人対戦'}
-          </Text>
-
-          {result === 'playing' && (
-            <Text style={styles.turnText}>
-              {isCpuThinking
-                ? 'CPU思考中...'
-                : player === 1
-                  ? '赤の番'
-                  : gameMode === 'pvc'
-                    ? 'CPUの番'
-                    : '黄の番'}
-            </Text>
+          {itemEffect && (
+            <View
+              style={[
+                styles.itemEffectBanner,
+                itemEffect.type === 'delete' && styles.itemEffectDelete,
+                itemEffect.type === 'crash' && styles.itemEffectCrash,
+                itemEffect.type === 'push' && styles.itemEffectPush,
+              ]}
+            >
+              <Text style={styles.itemEffectText}>{itemEffect.text}</Text>
+            </View>
           )}
-
-          {result !== 'playing' && (
-            <Text style={styles.resultText}>
-              {getResultText(result, winner, gameMode)}
-            </Text>
-          )}
-        </View>
-          <Board
-            key={selectedSkin.id}
-            board={board}
-            cellSize={cellSize}
-            cellMargin={cellMargin}
-            boardPadding={boardPadding}
-            activeItem={activeItem}
-            winningCells={winningCells}
-            redPiece={selectedSkin.red}
-            yellowPiece={selectedSkin.yellow}
-            onColumnPress={handleColumnPress}
-            onCellPress={handleCellPress}
-            currentPlayer={player}
-            disabled={showItemSelect}
-            boardEffectEvent={boardEffectEvent}
-          />
-        </View>
-
-        {/* UI */}
-        <ScrollView
-          style={[
-            styles.uiScroll,
-            {
-              width: isLandscape ? '35%' : '100%',
-              backgroundColor: '#e3ede0',
-            },
-          ]}
-          contentContainerStyle={styles.uiArea}
-        >
-          <StageHeader
-            gameMode={gameMode}
-
-            stage={stage}
-            maxStage={maxStage}
-            maxUnlockedStage={maxUnlockedStage}
-            stageLevel={stageLevel}
-
-            result={result}
-
-            onBack={() => router.back()}
-            onRetry={resetStage}
-            onPrevStage={goPrevStage}
-            onNextStage={goNextStage}
-
-            onStageSelect={() => router.push('/stages')}
-            onTitle={() => router.replace('/')}
-          />
-
-          {/* 赤 */}
-          <PlayerItemBar
-            label="赤のアイテム"
-            activeItem={activeItem}
-            deleteLeft={items.red.delete}
-            pushDownLeft={items.red.pushDown}
-            pushRightLeft={items.red.pushRight}
-            disabled={isRedItemDisabled}
-            onSelectItem={setActiveItem}
-            onCancelItem={() => setActiveItem(null)}
-          />
-
-          <PlayerItemBar
-            label="黄のアイテム"
-            activeItem={activeItem}
-            deleteLeft={items.yellow.delete}
-            pushDownLeft={items.yellow.pushDown}
-            pushRightLeft={items.yellow.pushRight}
-            disabled={isYellowItemDisabled}
-            onSelectItem={setActiveItem}
-            onCancelItem={() => setActiveItem(null)}
-          />
-
-        </ScrollView>
-      </View>
-
-      {showItemSelect && (
-        <ItemSelectPanel
-          count={itemSelectRule.count}
-          allowDuplicate={itemSelectRule.allowDuplicate}
-          onConfirm={chooseStageItems}
-        />
-      )}
-
-      {/* 🎉 勝利ポップ */}
-      {result !== 'playing' && (
-        <View style={styles.clearOverlay}>
-        <View style={styles.clearModal}>
-
-          <Text style={styles.clearTitle}>
-            {getTitle(gameMode, result, winner, stage, maxStage)}
-          </Text>
-          {gameMode === 'stage' && result === 'win' && stage >= maxStage && (
-            <Text style={styles.completeMessage}>
-              全60ステージクリアおめでとうございます！
-            </Text>
-          )}
-          {/* メインボタン */}
-          <TouchableOpacity
-            style={styles.mainButton}
-            onPress={handleMainAction}
+          
+          {/* 盤面 */}
+          <View
+            style={[
+              styles.boardArea,
+              { width: isLandscape ? '65%' : '100%' },
+            ]}
           >
-            <Text style={styles.mainButtonText}>
-              {getMainLabel(gameMode, result, stage, maxStage)}
-            </Text>
-          </TouchableOpacity>
 
-          {/* サブボタン */}
-          <TouchableOpacity
-            style={styles.subButton}
-            onPress={() => router.replace('/')}
+            <View style={styles.boardGlow} />
+            <View style={styles.infoPanel}>
+              <Text style={styles.modeText}>
+                {gameMode === 'stage' && 'ステージモード'}
+                {gameMode === 'pvc' && 'CPU対戦'}
+                {gameMode === 'pvp' && '2人対戦'}
+              </Text>
+
+              {result === 'playing' && (
+                <Text style={styles.turnText}>
+                  {isCpuThinking
+                    ? 'CPU思考中・・・'
+                    : player === 1
+                      ? '赤の番'
+                      : gameMode === 'pvc'
+                        ? 'CPUの番'
+                        : '黄の番'}
+                </Text>
+              )}
+
+              {result !== 'playing' && (
+                <Text style={styles.resultText}>
+                  {getResultText(result, winner, gameMode)}
+                </Text>
+              )}
+            </View>
+            <View style={styles.boardWrapper}>
+              <Board
+                key={selectedSkin.id}
+                board={board}
+                cellSize={cellSize}
+                cellMargin={cellMargin}
+                boardPadding={boardPadding}
+                activeItem={activeItem}
+                winningCells={winningCells}
+                redPiece={selectedSkin.red}
+                yellowPiece={selectedSkin.yellow}
+                onColumnPress={handleColumnPress}
+                onCellPress={handleCellPress}
+                currentPlayer={player}
+                disabled={showItemSelect}
+                boardEffectEvent={boardEffectEvent}
+              />
+            </View>
+          </View>
+          {/* UI */}
+          <ScrollView
+            style={[
+              styles.uiScroll,
+              {
+                width: isLandscape ? '35%' : '100%',
+                backgroundColor: '#e3ede0',
+              },
+            ]}
+            contentContainerStyle={styles.uiArea}
           >
-            <Text style={styles.subButtonText}>
-              タイトルに戻る
-            </Text>
-          </TouchableOpacity>
+            <StageHeader
+              gameMode={gameMode}
 
+              stage={stage}
+              maxStage={maxStage}
+              maxUnlockedStage={maxUnlockedStage}
+              stageLevel={stageLevel}
+
+              result={result}
+
+              onBack={() => router.back()}
+              onRetry={() => {
+                skipBoardChangeSound.current = true;
+                resetStage();
+              }}
+              onPrevStage={() => {
+                skipBoardChangeSound.current = true;
+                goPrevStage();
+              }}
+              onNextStage={() => {
+                skipBoardChangeSound.current = true;
+                goNextStage();
+              }}
+
+              onStageSelect={() => router.push('/stages')}
+              onTitle={() => router.replace('/')}
+            />
+
+            {/* 赤 */}
+            <PlayerItemBar
+              label="赤のアイテム"
+              activeItem={activeItem}
+              deleteLeft={items.red.delete}
+              pushDownLeft={items.red.pushDown}
+              pushRightLeft={items.red.pushRight}
+              disabled={isRedItemDisabled}
+              onSelectItem={setActiveItem}
+              onCancelItem={() => setActiveItem(null)}
+            />
+
+            <PlayerItemBar
+              label="黄のアイテム"
+              activeItem={activeItem}
+              deleteLeft={items.yellow.delete}
+              pushDownLeft={items.yellow.pushDown}
+              pushRightLeft={items.yellow.pushRight}
+              disabled={isYellowItemDisabled}
+              onSelectItem={setActiveItem}
+              onCancelItem={() => setActiveItem(null)}
+            />
+
+          </ScrollView>
         </View>
+
+        {showItemSelect && (
+          <ItemSelectPanel
+            count={itemSelectRule.count}
+            allowDuplicate={itemSelectRule.allowDuplicate}
+            onConfirm={chooseStageItems}
+            onTap={playTapSound}
+          />
+        )}
+
+        {/* 🎉 勝利ポップ */}
+        {result !== 'playing' && (
+          <View style={styles.clearOverlay}>
+            <View style={styles.clearModal}>
+              <Text style={styles.clearTitle}>
+                {getTitle(gameMode, result, winner, stage, maxStage)}
+              </Text>
+              {unlockedSkin && (
+                <View style={styles.unlockPanel}>
+                  <Text style={styles.unlockTitle}>
+                    新スキン解放！
+                  </Text>
+
+                  <Text style={styles.unlockSkinName}>
+                    {unlockedSkin.name}
+                  </Text>
+
+                  <Text style={styles.unlockDescription}>
+                    {unlockedSkin.description}
+                  </Text>
+                </View>
+              )}
+              {gameMode === 'stage' && result === 'win' && stage >= maxStage && (
+                <Text style={styles.completeMessage}>
+                  全60ステージクリアおめでとうございます！
+                </Text>
+              )}
+              {/* メインボタン */}
+              <TouchableOpacity
+                style={styles.mainButton}
+                onPress={async () => {
+                  await playTapSound();
+                  handleMainAction();
+                }}
+              >
+                <Text style={styles.mainButtonText}>
+                  {getMainLabel(gameMode, result, stage, maxStage)}
+                </Text>
+              </TouchableOpacity>
+
+              {/* サブボタン */}
+              <TouchableOpacity
+                style={styles.subButton}
+                onPress={async () => {
+                  await playTapSound();
+                  router.replace('/');
+                }}
+              >
+                <Text style={styles.subButtonText}>
+                  タイトルに戻る
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+          )}
+        </SafeAreaView>
       </View>
-      )}
-    </SafeAreaView>
+      <AdBanner position="bottom" />
+    </LinearGradient>
   );
 }
 
 function getTitle(mode, result, winner, stage, maxStage) {
   if (mode === 'stage') {
     if (result === 'win') {
-      if (stage >= maxStage) return 'すばらしい！';
+      if (stage >= maxStage) return '全ステージ\nクリア！';
       return 'ステージクリア！';
     }
 
-    if (result === 'lose') return '残念...';
+    if (result === 'lose') return 'もう一度挑戦！';
     if (result === 'draw') return '引き分け';
   }
 
-  if (mode === 'pvc' || mode === 'pvp') {
+  if (mode === 'pvc') {
+    if (winner === 1) return 'あなたの勝ち！';
+    if (winner === 2) return 'CPUの勝ち';
+    if (result === 'draw') return '引き分け';
+    return 'もう一度戦う？';
+  }
+
+  if (mode === 'pvp') {
+    if (winner === 1) return '赤の勝ち！';
+    if (winner === 2) return '黄の勝ち！';
+    if (result === 'draw') return '引き分け';
     return 'もう一度戦う？';
   }
 
@@ -550,10 +630,11 @@ function getResultText(result: string, winner: number | null, gameMode: string) 
   return '';
 }
 
-function ItemSelectPanel({ count, allowDuplicate, onConfirm }) {
+function ItemSelectPanel({ count, allowDuplicate, onConfirm, onTap }) {
   const [selectedItems, setSelectedItems] = React.useState([]);
 
   function selectItem(item) {
+    onTap?.();
     if (!allowDuplicate && selectedItems.includes(item)) {
       return;
     }
@@ -566,6 +647,7 @@ function ItemSelectPanel({ count, allowDuplicate, onConfirm }) {
   }
 
   function removeLast() {
+    onTap?.();
     setSelectedItems((prev) => prev.slice(0, -1));
   }
 
@@ -627,7 +709,10 @@ function ItemSelectPanel({ count, allowDuplicate, onConfirm }) {
             !canConfirm && styles.disabledButton,
           ]}
           disabled={!canConfirm}
-          onPress={() => onConfirm(selectedItems)}
+          onPress={() => {
+            onTap?.();
+            onConfirm(selectedItems);
+          }}
         >
           <Text style={styles.itemSelectButtonText}>決定</Text>
         </TouchableOpacity>
@@ -657,6 +742,8 @@ const styles = StyleSheet.create({
   boardArea: {
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
+    overflow: 'visible',
   },
   uiScroll: {},
   uiArea: {
@@ -666,27 +753,37 @@ const styles = StyleSheet.create({
 
   clearOverlay: {
     position: 'absolute',
-    top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    height: '46%',
+    backgroundColor: 'rgba(0, 0, 0, 0.23)',
+    justifyContent: 'flex-start:',
     alignItems: 'center',
-    paddingBottom: 112,
+    paddingHorizontal: 24,
   },
   clearModal: {
     backgroundColor: '#fff',
-    padding: 24,
-    borderRadius: 20,
-    width: '80%',
+    paddingVertical: 24,
+    paddingHorizontal: 22,
+    borderRadius: 24,
+    width: '88%',
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 10,
   },
   clearTitle: {
-    fontSize: 28,
+    fontSize: 34,
     fontWeight: '900',
-    marginBottom: 16,
+    marginBottom: 20,
     color: '#ff7043',
+    textAlign: 'center',
+    textShadowColor: 'rgba(255, 112, 67, 0.28)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 4,
   },
   clearText: {
     fontSize: 16,
@@ -694,30 +791,57 @@ const styles = StyleSheet.create({
   },
   mainButton: {
     backgroundColor: '#ff7043',
-    padding: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 16,
     width: '100%',
-    marginBottom: 10,
+    marginBottom: 12,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 6,
   },
   mainButtonText: {
     color: '#fff',
     fontWeight: '900',
+    fontSize: 18,
   },
   subButton: {
     backgroundColor: '#1565c0',
-    padding: 12,
-    borderRadius: 10,
+    paddingVertical: 15,
+    borderRadius: 15,
     width: '100%',
     alignItems: 'center',
   },
   subButtonText: {
     color: '#fff',
-    fontWeight: '800',
+    fontWeight: '900',
+    fontSize: 17,
   },
   infoPanel: {
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 2,
+
+    backgroundColor: 'rgba(255,255,255,0.92)',
+
+    paddingHorizontal: 18,
+    paddingVertical: 2,
+
+    borderRadius: 18,
+
+    borderWidth: 2,
+    borderColor: '#d6e8ff',
+
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+
+    elevation: 3,
   },
   modeText: {
     fontSize: 14,
@@ -726,9 +850,14 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   turnText: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: '900',
     color: '#1565c0',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 999,
+    overflow: 'hidden',
   },
   resultText: {
     fontSize: 22,
@@ -763,7 +892,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   itemSelectSubButton: {
-    backgroundColor: '#78909c',
+    backgroundColor: '#546e7a',
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 10,
@@ -834,5 +963,81 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
     lineHeight: 22,
+  },
+  screen: {
+  flex: 1,
+  },
+
+  gameArea: {
+    flex: 1,
+  },
+  unlockPanel: {
+    width: '100%',
+
+    backgroundColor: '#fff8e1',
+
+    borderRadius: 18,
+
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+
+    marginBottom: 4,
+
+    borderWidth: 3,
+    borderColor: '#ffe082',
+
+    alignItems: 'center',
+  },
+
+  unlockTitle: {
+    fontSize: 15,
+    fontWeight: '900',
+
+    color: '#ff7043',
+
+    marginBottom: 4,
+  },
+
+  unlockSkinName: {
+    fontSize: 22,
+    fontWeight: '900',
+
+    color: '#37474f',
+
+    marginBottom: 2,
+  },
+
+  unlockDescription: {
+    fontSize: 11,
+    fontWeight: '700',
+
+    color: '#546e7a',
+
+    textAlign: 'center',
+  },
+  boardGlow: {
+    position: 'absolute',
+    width: 360,
+    height: 360,
+    borderRadius: 999,
+    backgroundColor: 'rgba(33, 150, 243, 0.28)',
+    zIndex: 0,
+  },
+  boardWrapper: {
+    zIndex: 2,
+
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 22,
+    padding: 6,
+
+    shadowColor: '#0d47a1',
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+
+    elevation: 14,
   },
 });
